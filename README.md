@@ -118,24 +118,7 @@ npm run build:installer
 
 产物会生成到 `dist-installer/YaoTu-Setup-版本-x64.exe`。安装版会额外生成自动更新需要的 `latest.yml` 和 blockmap 文件。
 
-正式发布到 GitHub Releases 前，需要把 `package.json` 里的占位符换成你的仓库：
-
-```json
-{
-  "repository": {
-    "url": "https://github.com/你的用户名/你的仓库.git"
-  },
-  "build": {
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "你的用户名",
-        "repo": "你的仓库"
-      }
-    ]
-  }
-}
-```
+GitHub Releases 已配置到仓库 `Abisso-Beretta/yaotu-image-studio`。
 
 发布新版本时：
 
