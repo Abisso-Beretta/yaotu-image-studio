@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>妖荼</title>
+    <link rel="stylesheet" href="/styles.css?v=20260605-3">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">GPT Image Workbench</p>
+            <h1>妖荼</h1>
+          </div>
+          <div class="status" id="statusPill">检查配置中</div>
+        </div>
+
+        <div class="layout">
+          <form class="control-panel" id="generatorForm">
+            <details class="api-panel" open>
+              <summary>API 接入</summary>
+              <div class="api-grid">
+                <label class="field">
+                  <span>配置</span>
+                  <select id="profileSelect"></select>
+                </label>
+                <button type="button" class="ghost-button inline-button" id="newProfileButton">新建</button>
+
+                <label class="field">
+                  <span>名称</span>
+                  <input id="apiProfileName" type="text" value="默认配置">
+                </label>
+
+                <label class="field">
+                  <span>默认模型</span>
+                  <select id="apiImageModel">
+                    <option value="gpt-image-2">gpt-image-2</option>
+                    <option value="gpt-image-1.5">gpt-image-1.5</option>
+                    <option value="gpt-image-1">gpt-image-1</option>
+                  </select>
+                </label>
+
+                <label class="field wide">
+                  <span>生图接口</span>
+                  <select id="apiEndpointMode">
+                    <option value="images">Images API：/v1/images/generations</option>
+                    <option value="chat">聊天兼容：/v1/chat/completions</option>
+                  </select>
+                </label>
+
+                <label class="field wide">
+                  <span>Base URL</span>
+                  <input id="apiBaseUrl" type="url" spellcheck="false" placeholder="https://api.openai.com 或 https://你的中转/v1">
+                </label>
+
+                <label class="field wide">
+                  <span>API Key</span>
+                  <input id="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="留空则保留已保存密钥">
+                </label>
+              </div>
+              <div class="api-actions">
+                <button type="button" class="ghost-button" id="testApiButton">测试连接</button>
+                <button type="button" class="ghost-button primary-inline" id="saveApiButton">保存并启用</button>
+              </div>
+              <div class="aux-api">
+                <div class="section-copy">
+                  <span>辅助 API</span>
+                  <p>用于图片提词和多图提风格；默认复用生图配置，也可以单独接一个支持视觉理解的聊天兼容模型。</p>
+                </div>
+                <label class="check-tool aux-toggle">
+                  <input type="checkbox" id="auxUseActiveProfile" checked>
+                  <span>复用当前生图 API</span>
+                </label>
+                <div class="api-grid aux-grid" id="auxApiGrid">
+                  <label class="field wide">
+                    <span>辅助模型</span>
+                    <input id="auxModel" type="text" spellcheck="false" value="gpt-4o-mini">
+                  </label>
+                  <label class="field wide">
+                    <span>已拉取模型</span>
+                    <select id="auxModelSelect" disabled>
+                      <option value="">先拉取模型</option>
+                    </select>
+                  </label>
+                  <label class="field wide">
+                    <span>辅助 Base URL</span>
+                    <input id="auxBaseUrl" type="url" spellcheck="false" placeholder="留空或勾选复用当前生图 API">
+                  </label>
+                  <label class="field wide">
+                    <span>辅助 API Key</span>
+                    <input id="auxApiKey" type="password" spellcheck="false" autocomplete="off" placeholder="留空则保留已保存密钥">
+                  </label>
+                </div>
+                <div class="api-actions aux-actions">
+                  <button type="button" class="ghost-button" id="loadAuxModelsButton">拉取模型</button>
+                  <button type="button" class="ghost-button" id="testAuxButton">测试辅助</button>
+                  <button type="button" class="ghost-button primary-inline" id="saveAuxButton">保存辅助</button>
+                </div>
+              </div>
+              <div class="api-message" id="apiMessage">读取配置中</div>
+            </details>
+
+            <label class="field">
+              <span>画面方向</span>
+              <textarea id="prompt" rows="8" placeholder="例如：深色 AI 图片管理工具背景，带细腻玻璃质感、微弱数据流，中心和右侧留出干净区域，适合承载软件面板。"></textarea>
+            </label>
+
+            <label class="field">
+              <span>反向提示词</span>
+              <textarea id="negativePrompt" rows="3" placeholder="例如：文字、水印、logo、畸形手、过度噪点、低清晰度"></textarea>
+            </label>
+
+            <section class="reference-panel" aria-labelledby="referenceTitle">
+              <div class="section-copy">
+                <span id="referenceTitle">参考图</span>
+                <p>上传图片或把生成结果设为参考图；有参考图时标准模式会走 edits，聊天兼容模式会把图片放进消息里。</p>
+              </div>
+              <div class="reference-actions">
+                <label class="ghost-button file-button">
+                  添加参考图
+                  <input id="referenceInput" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+                </label>
+                <button type="button" class="ghost-button" id="clearReferencesButton">清空</button>
+              </div>
+              <div class="reference-grid" id="referenceGrid"></div>
+            </section>
+
+            <section class="analysis-upload-panel" aria-labelledby="analysisUploadTitle">
+              <div class="section-copy">
+                <span id="analysisUploadTitle">样图分析</span>
+                <p>上传外部样图，用辅助 API 提取关键词、共同风格或单图提示词，不占用生成参考图。</p>
+              </div>
+              <div class="analysis-actions">
+                <label class="ghost-button file-button">
+                  添加样图
+                  <input id="analysisImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple>
+                </label>
+                <button type="button" class="ghost-button" id="clearAnalysisImagesButton">清空样图</button>
+                <button type="button" class="ghost-button" id="extractKeywordsButton">提关键词</button>
+                <button type="button" class="ghost-button" id="extractUploadedStyleButton">提风格</button>
+                <button type="button" class="ghost-button" id="extractUploadedPromptButton">提提示词</button>
+              </div>
+              <div class="reference-grid analysis-upload-grid" id="analysisUploadGrid"></div>
+            </section>
+
+            <section class="preset-section" aria-labelledby="presetTitle">
+              <div class="section-copy">
+                <span id="presetTitle">用途 / 风格</span>
+                <p>用途决定构图和硬约束，风格决定画面语言；选择“自由创作”和“不套风格”时，只使用你手写的提示词。</p>
+              </div>
+              <label class="field">
+                <span>用途</span>
+                <select id="purposePreset">
+                  <option value="free">自由创作</option>
+                  <option value="software" selected>软件背景</option>
+                  <option value="portrait">人物写真</option>
+                  <option value="character">角色设定</option>
+                  <option value="desktop">桌面 / 工作台</option>
+                  <option value="product">产品静物</option>
+                  <option value="environment">场景 / 环境</option>
+                  <option value="architecture">建筑 / 室内</option>
+                  <option value="fashion">服装 / 潮流</option>
+                  <option value="food">美食 / 饮品</option>
+                  <option value="icon">图标 / 素材</option>
+                  <option value="poster">海报 / 封面</option>
+                  <option value="wallpaper">壁纸</option>
+                  <option value="gameAsset">游戏资产</option>
+                </select>
+              </label>
+              <div class="preset-grid" id="stylePresetGrid" aria-label="风格预设">
+                <button type="button" class="preset active" data-style="none">不套风格</button>
+              </div>
+            </section>
+
+            <div class="fields">
+              <label class="field">
+                <span>模型</span>
+                <select id="model">
+                  <option value="gpt-image-2">gpt-image-2</option>
+                  <option value="gpt-image-1.5">gpt-image-1.5</option>
+                  <option value="gpt-image-1">gpt-image-1</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>尺寸</span>
+                <select id="size">
+                  <option value="3584x2240" selected>16:10 近 4K 3584x2240</option>
+                  <option value="3200x2000">16:10 3200x2000</option>
+                  <option value="2560x1600">16:10 2560x1600</option>
+                  <option value="3840x2160">16:9 4K 3840x2160</option>
+                  <option value="2560x1440">16:9 2560x1440</option>
+                  <option value="1920x1088">16:9 近似 1920x1088</option>
+                  <option value="2160x3840">9:16 4K 2160x3840</option>
+                  <option value="1440x2560">9:16 1440x2560</option>
+                  <option value="3072x2304">4:3 3072x2304</option>
+                  <option value="2048x1536">4:3 2048x1536</option>
+                  <option value="1600x1200">4:3 1600x1200</option>
+                  <option value="2304x3072">3:4 2304x3072</option>
+                  <option value="1536x2048">3:4 1536x2048</option>
+                  <option value="2880x2880">1:1 2880x2880</option>
+                  <option value="2048x2048">1:1 2048x2048</option>
+                  <option value="1024x1024">方形 1024x1024</option>
+                  <option value="3072x2048">3:2 3072x2048</option>
+                  <option value="2048x3072">2:3 2048x3072</option>
+                  <option value="2560x2048">5:4 2560x2048</option>
+                  <option value="2048x2560">4:5 2048x2560</option>
+                  <option value="3440x1440">超宽屏 3440x1440</option>
+                  <option value="2560x1088">超宽屏 2560x1088</option>
+                  <option value="1536x1024">横屏 1536x1024</option>
+                  <option value="1024x1536">竖屏 1024x1536</option>
+                  <option value="auto">自动</option>
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>质量</span>
+                <select id="quality">
+                  <option value="auto">自动</option>
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                  <option value="low">低</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>张数</span>
+                <input id="count" type="number" min="1" max="4" value="2">
+              </label>
+
+              <label class="field">
+                <span>格式</span>
+                <select id="outputFormat">
+                  <option value="png">PNG</option>
+                  <option value="webp">WebP</option>
+                  <option value="jpeg">JPEG</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>背景</span>
+                <select id="background">
+                  <option value="auto">自动</option>
+                  <option value="opaque">不透明</option>
+                  <option value="transparent">透明</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="custom-size" id="customSize">
+              <label class="field">
+                <span>宽度</span>
+                <input id="customWidth" type="number" min="16" max="3840" step="16" value="3584">
+              </label>
+              <label class="field">
+                <span>高度</span>
+                <input id="customHeight" type="number" min="16" max="3840" step="16" value="2240">
+              </label>
+            </div>
+            <div class="size-hint" id="sizeHint"></div>
+
+            <label class="range-field">
+              <span>压缩质量 <strong id="compressionValue">85</strong></span>
+              <input id="outputCompression" type="range" min="0" max="100" value="85">
+            </label>
+
+            <details class="prompt-preview">
+              <summary>查看最终提示词</summary>
+              <pre id="finalPrompt"></pre>
+            </details>
+
+            <button class="generate-button" type="submit" id="generateButton">
+              <span>生成图片</span>
+            </button>
+          </form>
+
+          <section class="gallery-panel">
+            <div class="gallery-head">
+              <div>
+                <p class="eyebrow">Outputs</p>
+                <h2>最近生成</h2>
+              </div>
+              <button type="button" class="ghost-button" id="refreshButton">刷新</button>
+            </div>
+            <div class="gallery-tools">
+              <label class="check-tool">
+                <input type="checkbox" id="selectPageImages">
+                <span>选择本页</span>
+              </label>
+              <button type="button" class="ghost-button" id="deleteSelectedButton">删除所选</button>
+              <label class="page-size-tool">
+                <span>每页</span>
+                <select id="galleryPageSize">
+                  <option value="6">6</option>
+                  <option value="12" selected>12</option>
+                  <option value="24">24</option>
+                  <option value="48">48</option>
+                </select>
+              </label>
+              <div class="pager">
+                <button type="button" class="ghost-button" id="previousPageButton">上一页</button>
+                <span id="pageInfo">1 / 1</span>
+                <button type="button" class="ghost-button" id="nextPageButton">下一页</button>
+              </div>
+            </div>
+            <div class="analysis-panel" id="analysisPanel" hidden>
+              <div class="analysis-head">
+                <strong id="analysisTitle">分析结果</strong>
+                <div>
+                  <button type="button" class="ghost-button" id="copyAnalysisButton">复制</button>
+                  <button type="button" class="ghost-button" id="useAnalysisButton">写入提示词</button>
+                  <button type="button" class="ghost-button" id="saveAnalysisPromptButton">保存提示词</button>
+                  <button type="button" class="ghost-button" id="saveAnalysisStyleButton">保存风格</button>
+                  <button type="button" class="ghost-button" id="clearAnalysisButton">清空</button>
+                </div>
+              </div>
+              <label class="field">
+                <span>名称</span>
+                <input id="analysisName" type="text" placeholder="给这条结果起个名字">
+              </label>
+              <label class="field">
+                <span>保存风格强度</span>
+                <select id="analysisStyleStrength">
+                  <option value="low">低：只加风格 DNA</option>
+                  <option value="medium" selected>中：风格 DNA + 风格规则</option>
+                  <option value="high">高：风格 DNA + 样图参考</option>
+                </select>
+              </label>
+              <textarea id="analysisResult" rows="8"></textarea>
+            </div>
+            <div class="message" id="message">填写画面方向后开始生成。</div>
+            <div class="gallery" id="gallery"></div>
+          </section>
+
+          <aside class="saved-prompts-panel">
+            <div class="saved-head">
+              <div>
+                <p class="eyebrow">Prompts</p>
+                <strong>已保存提示词</strong>
+              </div>
+              <span id="savedPromptCount">0</span>
+            </div>
+            <div class="saved-list" id="savedPromptList"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <div class="preview-modal" id="previewModal" aria-hidden="true">
+      <button type="button" class="preview-close" id="previewClose" aria-label="关闭预览">×</button>
+      <button type="button" class="preview-nav previous" id="previewPrevious" aria-label="上一张">‹</button>
+      <figure class="preview-frame">
+        <img id="previewImage" alt="大图预览">
+        <figcaption id="previewCaption"></figcaption>
+      </figure>
+      <button type="button" class="preview-nav next" id="previewNext" aria-label="下一张">›</button>
+    </div>
+
+    <script src="/app.js?v=20260605-3"></script>
+  </body>
+</html>

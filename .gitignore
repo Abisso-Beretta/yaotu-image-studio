@@ -1,0 +1,17 @@
+.env
+api-profiles.json
+outputs/
+node_modules/
+.tools/
+dist/
+dist-installer/
+release/
+*.log
+*.start.err.log
+IMG_*.jpg
+IMG_*.jpeg
+IMG_*.png
+/icon.ico
+*.exe
+*.blockmap
+latest.yml

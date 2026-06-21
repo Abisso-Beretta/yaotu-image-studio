@@ -1,0 +1,88 @@
+{
+  "name": "theme-background-generator",
+  "version": "0.1.0",
+  "private": true,
+  "description": "妖荼: a local GPT Image background generator.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR_GITHUB_OWNER/YOUR_GITHUB_REPO.git"
+  },
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check public/app.js && node --check desktop/main.js",
+    "desktop": "electron .",
+    "build:dir": "electron-builder --dir --win --x64 --publish never",
+    "build:exe": "electron-builder --win portable --x64 --publish never",
+    "build:installer": "electron-builder --win nsis --x64 --publish never --config.directories.output=dist-installer",
+    "release:github": "electron-builder --win nsis portable --x64 --publish always --config.directories.output=dist-installer",
+    "tauri:exe": "npm run build:exe"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "build": {
+    "appId": "local.yaotu.workbench",
+    "productName": "妖荼",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "server.js",
+      "package.json",
+      "public/**/*",
+      "desktop/**/*",
+      "!api-profiles.json",
+      "!.env",
+      "!outputs/**/*",
+      "!dist/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "YOUR_GITHUB_OWNER",
+        "repo": "YOUR_GITHUB_REPO",
+        "releaseType": "release"
+      }
+    ],
+    "win": {
+      "compression": "store",
+      "icon": "desktop/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "signAndEditExecutable": false,
+      "signDlls": false,
+      "verifyUpdateCodeSignature": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "artifactName": "YaoTu-Setup-${version}-${arch}.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "妖荼",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "YaoTu-${version}-${arch}.${ext}",
+      "requestExecutionLevel": "user",
+      "useZip": true,
+      "unpackDirName": "YaoTu"
+    }
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  }
+}
