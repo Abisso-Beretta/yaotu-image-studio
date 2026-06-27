@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>妖荼 · 漫剧工作台</title>
+    <link rel="stylesheet" href="/manju.css?v=20260625-scene-cards-1">
+  </head>
+  <body>
+    <main class="manju-app">
+      <aside class="project-rail" aria-label="漫剧项目导航">
+        <a class="brand-lockup" href="/?mode=general">
+          <span>妖荼</span>
+          <strong>A 纯生图</strong>
+        </a>
+
+        <section class="rail-section">
+          <div class="rail-heading">
+            <p class="eyebrow">Project</p>
+            <button type="button" class="icon-button" id="newProjectButton" aria-label="新建项目" title="新建项目">+</button>
+          </div>
+          <label class="field compact">
+            <span>当前剧名</span>
+            <select id="projectSelect"></select>
+          </label>
+          <p class="rail-note" id="projectMeta">未选择项目</p>
+        </section>
+
+        <nav class="rail-nav" aria-label="制作流程">
+          <button type="button" class="rail-link active" data-workspace="overview">
+            <span>总</span>
+            <strong>项目总览</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="project">
+            <span>设</span>
+            <strong>项目设定</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="script">
+            <span>本</span>
+            <strong>剧本/分镜</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="characters">
+            <span>人</span>
+            <strong>人设库</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="scenes">
+            <span>景</span>
+            <strong>场景库</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="shots">
+            <span>镜</span>
+            <strong>分镜接力</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="gallery">
+            <span>图</span>
+            <strong>图集归档</strong>
+          </button>
+          <button type="button" class="rail-link" data-workspace="export">
+            <span>出</span>
+            <strong>导出交付</strong>
+          </button>
+        </nav>
+      </aside>
+
+      <section class="workbench">
+        <header class="workbench-topbar">
+          <div>
+            <p class="eyebrow">Manju Image Studio</p>
+            <h1 id="currentProjectTitle">漫剧工作台</h1>
+          </div>
+          <div class="topbar-actions">
+            <a class="ghost-link" href="/?mode=general">返回 A 版</a>
+            <button type="button" class="ghost-button" id="openLegacyButton">打开旧版 B 面板</button>
+            <button type="button" class="primary-button" id="continueButton">继续制作</button>
+          </div>
+        </header>
+
+        <section class="project-hero" aria-labelledby="heroTitle">
+          <div class="hero-copy">
+            <p class="eyebrow">Current Project</p>
+            <h2 id="heroTitle">围绕剧名沉淀可复用资产</h2>
+            <p id="heroDescription">把全局画风包、人设提示词包、场景包、分镜公式和图集归档拆开管理，B 版只服务漫剧生图。</p>
+          </div>
+          <div class="hero-checklist" aria-label="项目准备度">
+            <div class="check-item done">
+              <span></span>
+              <p>剧名与全局画风</p>
+            </div>
+            <div class="check-item" id="scriptReadyItem">
+              <span></span>
+              <p>剧本分镜表</p>
+            </div>
+            <div class="check-item" id="characterReadyItem">
+              <span></span>
+              <p>主角人设卡</p>
+            </div>
+            <div class="check-item" id="archiveReadyItem">
+              <span></span>
+              <p>分镜图集归档</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="stat-grid" aria-label="项目状态">
+          <article class="stat-card">
+            <span>人设卡</span>
+            <strong id="characterCount">0</strong>
+            <p>角色设定、三视图、细节图入口</p>
+          </article>
+          <article class="stat-card">
+            <span>漫剧包</span>
+            <strong id="packCount">0</strong>
+            <p>剧名、画风包、默认分镜参数</p>
+          </article>
+          <article class="stat-card">
+            <span>剧本镜头</span>
+            <strong id="scriptShotCount">0</strong>
+            <p>已拆分可生图的分镜行</p>
+          </article>
+          <article class="stat-card">
+            <span>分镜候选</span>
+            <strong id="candidateCount">0</strong>
+            <p>按镜号归档的备选图</p>
+          </article>
+          <article class="stat-card">
+            <span>定稿</span>
+            <strong id="finalCount">0</strong>
+            <p>可进入交付包的最终图</p>
+          </article>
+        </section>
+
+        <section class="workspace-panel" id="workspacePanel" aria-live="polite">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow" id="workspaceEyebrow">Overview</p>
+              <h2 id="workspaceTitle">项目总览</h2>
+            </div>
+            <span id="projectSummary">当前剧名：未命名漫剧</span>
+          </div>
+          <p class="panel-description" id="workspaceDescription">先检查项目资产是否齐，再进入对应模块继续制作。</p>
+          <div class="workspace-grid" id="workspaceGrid"></div>
+        </section>
+
+        <section class="asset-board" aria-label="最近资产">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Recent Assets</p>
+              <h2>最近资产</h2>
+            </div>
+            <button type="button" class="ghost-button" id="refreshAssetsButton">刷新</button>
+          </div>
+          <div class="asset-grid" id="assetGrid"></div>
+        </section>
+      </section>
+
+      <aside class="context-panel" aria-label="当前项目上下文">
+        <section class="context-card">
+          <div class="section-head tight">
+            <div>
+              <p class="eyebrow">Prompt Pack</p>
+              <h2>提示词包</h2>
+            </div>
+          </div>
+          <div class="prompt-stack" id="promptPackList"></div>
+        </section>
+
+        <section class="context-card">
+          <div class="section-head tight">
+            <div>
+              <p class="eyebrow">Consistency</p>
+              <h2>一致性检查</h2>
+            </div>
+          </div>
+          <div class="quality-list" id="qualityList"></div>
+        </section>
+
+        <section class="context-card">
+          <div class="section-head tight">
+            <div>
+              <p class="eyebrow">Next</p>
+              <h2>下一步</h2>
+            </div>
+          </div>
+          <div class="next-actions">
+            <button type="button" class="primary-button" data-jump="characters">补人设</button>
+            <button type="button" class="ghost-button" data-jump="shots">做分镜</button>
+            <button type="button" class="ghost-button" data-jump="gallery">整理图集</button>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script src="/manju.js?v=20260625-scene-cards-1"></script>
+  </body>
+</html>

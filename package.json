@@ -10,7 +10,7 @@
   "main": "desktop/main.js",
   "scripts": {
     "start": "node server.js",
-    "check": "node --check server.js && node --check public/app.js && node --check desktop/main.js",
+    "check": "node --check server.js && node --check public/app.js && node --check public/manju.js && node --check desktop/main.js",
     "desktop": "electron .",
     "build:dir": "electron-builder --dir --win --x64 --publish never",
     "build:exe": "electron-builder --win portable --x64 --publish never",

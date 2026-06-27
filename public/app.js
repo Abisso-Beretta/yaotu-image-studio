@@ -317,8 +317,200 @@ const postProcessSizePresets = [
   { value: "2240x3584", label: "10:16 近 4K" },
 ];
 
+const promptLexiconGroups = [
+  {
+    id: "camera",
+    label: "镜头",
+    items: [
+      { label: "低角度", text: "低角度仰拍，强调主体体量与压迫感，透视稳定" },
+      { label: "过肩", text: "过肩镜头，前景肩部轻微虚化，视线指向明确" },
+      { label: "特写", text: "面部特写，眼神清晰，浅景深，情绪集中" },
+      { label: "广角", text: "广角镜头，空间纵深明显，边缘畸变克制" },
+      { label: "长焦", text: "长焦压缩空间，背景柔和虚化，主体轮廓干净" },
+    ],
+  },
+  {
+    id: "composition",
+    label: "构图",
+    items: [
+      { label: "三分法", text: "三分法构图，主体落在视觉焦点，留白可承载信息" },
+      { label: "对称", text: "中心对称构图，结构稳定，左右视觉重量均衡" },
+      { label: "前中后景", text: "清晰前景、中景、背景层次，空间关系可读" },
+      { label: "引导线", text: "利用建筑线条和光影引导视线，焦点明确" },
+      { label: "负空间", text: "保留干净负空间，主体不贴边，画面呼吸感充足" },
+    ],
+  },
+  {
+    id: "lighting",
+    label: "灯光",
+    items: [
+      { label: "电影侧光", text: "cinematic side lighting，面部明暗层次清楚，轮廓边缘有柔和 rim light" },
+      { label: "柔光", text: "large softbox lighting，阴影柔和，皮肤和材质质感自然" },
+      { label: "逆光", text: "backlight silhouette，轮廓光清晰，背景高光不过曝" },
+      { label: "雨夜霓虹", text: "rainy neon lighting，湿润反光地面，冷暖色对比克制" },
+      { label: "窗光", text: "window light from one side，空气中轻微尘埃感，光线方向稳定" },
+    ],
+  },
+  {
+    id: "expression",
+    label: "表情",
+    items: [
+      { label: "克制", text: "克制表情，眼神压住情绪，嘴角细微变化" },
+      { label: "震惊", text: "短暂震惊，瞳孔聚焦，肩颈紧绷，表情不过度夸张" },
+      { label: "疲惫", text: "疲惫但保持清醒，眼下轻微阴影，姿态收紧" },
+      { label: "决心", text: "坚定决心，视线直指目标，下颌线稳定" },
+      { label: "温柔", text: "温柔放松的表情，眼神柔和，面部肌肉自然" },
+    ],
+  },
+  {
+    id: "action",
+    label: "动作",
+    items: [
+      { label: "回头", text: "角色半身回头，肩线带动动作，视线与镜头形成张力" },
+      { label: "推门", text: "一手推开门，另一手自然保持平衡，门缝透出光线" },
+      { label: "递物", text: "双人递交物件，手部结构准确，物件位置清楚" },
+      { label: "奔跑", text: "向前奔跑，衣摆和发丝有方向性动态，身体重心合理" },
+      { label: "停顿", text: "动作停在关键一瞬，姿态有惯性，画面有悬念" },
+    ],
+  },
+  {
+    id: "mood",
+    label: "画面气质",
+    items: [
+      { label: "高级克制", text: "高级、克制、干净的视觉气质，细节精致但不过度堆叠" },
+      { label: "悬疑", text: "悬疑氛围，暗部保留细节，画面张力来自光影和留白" },
+      { label: "温暖日常", text: "温暖日常感，低对比柔和色彩，生活细节真实" },
+      { label: "史诗感", text: "epic scale，宏大空间尺度，主体仍然清晰可辨" },
+      { label: "杂志质感", text: "editorial visual polish，构图精确，色彩统一，质感高级" },
+    ],
+  },
+  {
+    id: "continuity",
+    label: "连续性约束",
+    items: [
+      { label: "角色一致", text: "保持角色脸型、发型、发色、服装轮廓、标志性配饰完全一致" },
+      { label: "场景一致", text: "保持同一地点的空间结构、门窗位置、主道具和光线方向一致" },
+      { label: "镜头衔接", text: "延续上一帧镜头关系，只推进动作和表情，不重设场景" },
+      { label: "服装锁定", text: "服装款式、材质、配色和配饰不改变，不新增不合理装饰" },
+      { label: "无文字", text: "画面中不要生成可读文字、字幕、水印、logo 或随机符号" },
+    ],
+  },
+];
+
+const MANJU_PACKS_STORAGE_KEY = "yaotu-manju-packs";
+const MANJU_CHARACTER_CARDS_STORAGE_KEY = "yaotu-manju-character-cards";
+const MANJU_ARCHIVES_STORAGE_KEY = "yaotu-manju-image-archives";
+const MANJU_SHOT_HANDOFF_STORAGE_KEY = "yaotu-manju-shot-handoff";
+const MANJU_SHOT_QUEUE_HANDOFF_STORAGE_KEY = "yaotu-manju-shot-queue-handoff";
+const MANJU_CHARACTER_HANDOFF_STORAGE_KEY = "yaotu-manju-character-handoff";
+const MANJU_ACTIVE_SHOT_QUEUE_STORAGE_KEY = "yaotu-manju-active-shot-queue";
+const ACTIVE_PROJECT_STORAGE_KEY = "yaotu-manju-workbench-project";
+const MANJU_ARCHIVE_ALL_VALUE = "__all__";
+const DEFAULT_MANJU_ARCHIVE_CATEGORY = "shot-candidate";
+const MANJU_ARCHIVE_CATEGORIES = [
+  { value: "character-profile", label: "人设资料" },
+  { value: "turnaround", label: "三视图" },
+  { value: "detail", label: "细节图" },
+  { value: "expression", label: "表情图" },
+  { value: "scene", label: "场景图" },
+  { value: "shot-candidate", label: "分镜候选" },
+  { value: "shot-final", label: "分镜定稿" },
+  { value: "discarded", label: "废稿" },
+];
+const MANJU_FORMULA_PRESETS = {
+  shot: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "角色人设：",
+    "{人设提示词包}",
+    "",
+    "分镜画面：",
+    "{分镜描述}",
+    "",
+    "场景：{场景}",
+    "场景包：{场景包}",
+    "镜头：{景别}，{机位}",
+    "动作：{动作}",
+    "情绪：{情绪}",
+    "参考策略：{参考策略}",
+    "对白/旁白参考：{对白}",
+    "",
+    "硬性要求：保持角色脸型、发型、服装核心设计一致；保持全局画风统一；画面无文字、无水印、无 logo；不要生成对白字幕。",
+  ].join("\n"),
+  character: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "目标：生成可反复复用的人设资料卡关键图。",
+    "角色人设：{人设提示词包}",
+    "画面内容：{分镜描述}",
+    "镜头：{景别}，{机位}",
+    "情绪/姿态：{情绪}，{动作}",
+    "参考策略：角色优先，固定脸型、发型、瞳色、服装轮廓、标志物和年龄感。",
+    "输出要求：适合作为角色卡/三视图/细节图的稳定参考图；背景简洁；不要文字、水印、logo。",
+  ].join("\n"),
+  referenceFusion: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "目标：基于多张参考图融合出当前漫剧关键帧。",
+    "角色人设：{人设提示词包}",
+    "场景包：{场景包}",
+    "分镜画面：{分镜描述}",
+    "镜头：{景别}，{机位}",
+    "动作/情绪：{动作}，{情绪}",
+    "参考策略：{参考策略}",
+    "要求：从参考图继承身份、画风和场景结构，但不要复制参考图的原构图；保持主体一致、画风一致、空间关系清晰。",
+  ].join("\n"),
+  emotionCloseup: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "角色人设：{人设提示词包}",
+    "镜头类型：情绪特写 / 近景。",
+    "分镜画面：{分镜描述}",
+    "情绪重点：{情绪}",
+    "动作细节：{动作}",
+    "场景氛围：{场景}；{场景包}",
+    "要求：面部表情清楚，眼神有戏，背景弱化但保留剧情氛围；不要文字、水印、logo。",
+  ].join("\n"),
+  establishing: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "镜头类型：场景建立镜头。",
+    "场景：{场景}",
+    "场景包：{场景包}",
+    "分镜画面：{分镜描述}",
+    "镜头：{景别}，{机位}",
+    "氛围：{情绪}",
+    "要求：优先建立空间结构、光线、天气、关键道具和人物位置；角色可小但身份要稳定；不要文字、水印、logo。",
+  ].join("\n"),
+  interaction: [
+    "{全局画风包}",
+    "",
+    "剧名：{剧名}",
+    "镜头类型：双人/多人互动关键帧。",
+    "角色人设：{人设提示词包}",
+    "场景：{场景}；{场景包}",
+    "分镜画面：{分镜描述}",
+    "站位与动作：{动作}",
+    "情绪冲突：{情绪}",
+    "镜头：{景别}，{机位}",
+    "参考策略：多主体互动，同时保持多名角色身份稳定，明确站位、视线和肢体关系。",
+    "要求：不要合脸、不要换衣服、不要多手多指、不要文字、水印、logo。",
+  ].join("\n"),
+};
+const DEFAULT_MANJU_FORMULA = MANJU_FORMULA_PRESETS.shot;
+const DEFAULT_GENERAL_PROMPT = "面向 AI 图片管理软件的主题背景，现代、克制、有一点东方志怪感但不做古风插画，画面有层次但不抢内容，中心和右侧留出干净空间，适合承载侧边栏、卡片和预览区域。";
+const DEFAULT_MANJU_PROMPT = "女主推开会议室大门，所有人回头，男主站在落地窗前，窗外暴雨。";
+
 const form = document.querySelector("#generatorForm");
+const modeGeneralButton = document.querySelector("#modeGeneralButton");
+const modeManjuButton = document.querySelector("#modeManjuButton");
 const promptInput = document.querySelector("#prompt");
+const promptLabel = document.querySelector("#promptLabel");
 const negativePromptInput = document.querySelector("#negativePrompt");
 const finalPrompt = document.querySelector("#finalPrompt");
 const purposePreset = document.querySelector("#purposePreset");
@@ -343,24 +535,36 @@ const customWidth = document.querySelector("#customWidth");
 const customHeight = document.querySelector("#customHeight");
 const sizeHint = document.querySelector("#sizeHint");
 const profileSelect = document.querySelector("#profileSelect");
+const apiProfileManagerSelect = document.querySelector("#apiProfileManagerSelect");
+const openApiSettingsButton = document.querySelector("#openApiSettingsButton");
+const closeApiSettingsButton = document.querySelector("#closeApiSettingsButton");
+const apiSettingsModal = document.querySelector("#apiSettingsModal");
 const newProfileButton = document.querySelector("#newProfileButton");
+const deleteProfileButton = document.querySelector("#deleteProfileButton");
 const saveApiButton = document.querySelector("#saveApiButton");
 const testApiButton = document.querySelector("#testApiButton");
 const apiProfileName = document.querySelector("#apiProfileName");
 const apiImageModel = document.querySelector("#apiImageModel");
+const apiImageModelSelect = document.querySelector("#apiImageModelSelect");
 const apiEndpointMode = document.querySelector("#apiEndpointMode");
 const apiBaseUrl = document.querySelector("#apiBaseUrl");
 const apiKey = document.querySelector("#apiKey");
 const apiMessage = document.querySelector("#apiMessage");
+const auxProfileManagerSelect = document.querySelector("#auxProfileManagerSelect");
+const newAuxProfileButton = document.querySelector("#newAuxProfileButton");
+const deleteAuxProfileButton = document.querySelector("#deleteAuxProfileButton");
+const auxProfileName = document.querySelector("#auxProfileName");
 const auxUseActiveProfile = document.querySelector("#auxUseActiveProfile");
 const auxModel = document.querySelector("#auxModel");
 const auxModelSelect = document.querySelector("#auxModelSelect");
 const auxBaseUrl = document.querySelector("#auxBaseUrl");
 const auxApiKey = document.querySelector("#auxApiKey");
+const loadImageModelsButton = document.querySelector("#loadImageModelsButton");
 const loadAuxModelsButton = document.querySelector("#loadAuxModelsButton");
 const testAuxButton = document.querySelector("#testAuxButton");
 const saveAuxButton = document.querySelector("#saveAuxButton");
 const referenceInput = document.querySelector("#referenceInput");
+const extractReferenceSceneButton = document.querySelector("#extractReferenceSceneButton");
 const clearReferencesButton = document.querySelector("#clearReferencesButton");
 const referenceGrid = document.querySelector("#referenceGrid");
 const analysisImageInput = document.querySelector("#analysisImageInput");
@@ -379,18 +583,85 @@ const useAnalysisButton = document.querySelector("#useAnalysisButton");
 const saveAnalysisPromptButton = document.querySelector("#saveAnalysisPromptButton");
 const saveAnalysisStyleButton = document.querySelector("#saveAnalysisStyleButton");
 const clearAnalysisButton = document.querySelector("#clearAnalysisButton");
+const savePromptButton = document.querySelector("#savePromptButton");
+const promptOptimizeMode = document.querySelector("#promptOptimizeMode");
+const optimizePromptButton = document.querySelector("#optimizePromptButton");
+const lexiconCategorySelect = document.querySelector("#lexiconCategorySelect");
+const lexiconChipList = document.querySelector("#lexiconChipList");
 const savedPromptCount = document.querySelector("#savedPromptCount");
 const savedPromptList = document.querySelector("#savedPromptList");
+const recentPromptCount = document.querySelector("#recentPromptCount");
+const recentPromptList = document.querySelector("#recentPromptList");
 const previewModal = document.querySelector("#previewModal");
 const previewImage = document.querySelector("#previewImage");
 const previewCaption = document.querySelector("#previewCaption");
 const previewClose = document.querySelector("#previewClose");
 const previewPrevious = document.querySelector("#previewPrevious");
 const previewNext = document.querySelector("#previewNext");
+const manjuPanel = document.querySelector("#manjuPanel");
+const manjuTabButtons = Array.from(document.querySelectorAll("[data-manju-tab]"));
+const manjuTabPanels = Array.from(document.querySelectorAll("[data-manju-panel]"));
+const manjuPackSelect = document.querySelector("#manjuPackSelect");
+const saveManjuPackButton = document.querySelector("#saveManjuPackButton");
+const loadManjuPackButton = document.querySelector("#loadManjuPackButton");
+const deleteManjuPackButton = document.querySelector("#deleteManjuPackButton");
+const manjuCharacterSelect = document.querySelector("#manjuCharacterSelect");
+const saveManjuCharacterButton = document.querySelector("#saveManjuCharacterButton");
+const loadManjuCharacterButton = document.querySelector("#loadManjuCharacterButton");
+const appendManjuCharacterButton = document.querySelector("#appendManjuCharacterButton");
+const deleteManjuCharacterButton = document.querySelector("#deleteManjuCharacterButton");
+const manjuCharacterName = document.querySelector("#manjuCharacterName");
+const manjuCharacterRole = document.querySelector("#manjuCharacterRole");
+const manjuCharacterPrompt = document.querySelector("#manjuCharacterPrompt");
+const manjuTitle = document.querySelector("#manjuTitle");
+const manjuFormulaPreset = document.querySelector("#manjuFormulaPreset");
+const manjuScene = document.querySelector("#manjuScene");
+const manjuReferenceStrategy = document.querySelector("#manjuReferenceStrategy");
+const manjuShotSize = document.querySelector("#manjuShotSize");
+const manjuCamera = document.querySelector("#manjuCamera");
+const manjuEmotion = document.querySelector("#manjuEmotion");
+const manjuAction = document.querySelector("#manjuAction");
+const manjuScenePack = document.querySelector("#manjuScenePack");
+const manjuStylePack = document.querySelector("#manjuStylePack");
+const manjuCharacterPack = document.querySelector("#manjuCharacterPack");
+const manjuDialogue = document.querySelector("#manjuDialogue");
+const manjuFormula = document.querySelector("#manjuFormula");
+const setManjuDefaultsButton = document.querySelector("#setManjuDefaultsButton");
+const refreshFormulaButton = document.querySelector("#refreshFormulaButton");
+const resetFormulaButton = document.querySelector("#resetFormulaButton");
+const manjuGalleryTools = document.querySelector("#manjuGalleryTools");
+const manjuArchiveActiveTitle = document.querySelector("#manjuArchiveActiveTitle");
+const manjuArchiveTitleFilter = document.querySelector("#manjuArchiveTitleFilter");
+const manjuArchiveCategoryFilter = document.querySelector("#manjuArchiveCategoryFilter");
+const manjuArchiveSummary = document.querySelector("#manjuArchiveSummary");
+const clearManjuArchiveFilterButton = document.querySelector("#clearManjuArchiveFilterButton");
+const exportManjuArchiveButton = document.querySelector("#exportManjuArchiveButton");
+const archiveQuickPanel = document.querySelector("#archiveQuickPanel");
+const archiveQuickGroups = document.querySelector("#archiveQuickGroups");
+const refreshArchiveQuickButton = document.querySelector("#refreshArchiveQuickButton");
+const shotQueuePanel = document.querySelector("#shotQueuePanel");
+const shotQueueTitle = document.querySelector("#shotQueueTitle");
+const shotQueueProgress = document.querySelector("#shotQueueProgress");
+const shotQueueCurrent = document.querySelector("#shotQueueCurrent");
+const shotQueueList = document.querySelector("#shotQueueList");
+const clearShotQueueButton = document.querySelector("#clearShotQueueButton");
+const loadShotQueuePromptButton = document.querySelector("#loadShotQueuePromptButton");
+const generateShotQueueCurrentButton = document.querySelector("#generateShotQueueCurrentButton");
+const generateShotQueueAllButton = document.querySelector("#generateShotQueueAllButton");
 
+const requestedMode = new URLSearchParams(window.location.search).get("mode");
+let activeMode = requestedMode === "manju"
+  ? "manju"
+  : requestedMode === "general"
+    ? "general"
+    : localStorage.getItem("yaotu-workbench-mode") === "manju" ? "manju" : "general";
+localStorage.setItem("yaotu-workbench-mode", activeMode);
+let activeManjuTab = ["project", "character", "shot"].includes(localStorage.getItem("yaotu-manju-active-tab"))
+  ? localStorage.getItem("yaotu-manju-active-tab")
+  : "project";
 let activePurpose = "software";
 let activeStyle = "none";
-let apiSettings = { activeProfileId: "", profiles: [] };
+let apiSettings = { activeProfileId: "", profiles: [], activeAuxiliaryProfileId: "", auxiliaryProfiles: [] };
 let referenceImages = [];
 let analysisImages = [];
 let galleryImages = [];
@@ -402,9 +673,34 @@ let galleryTotalPages = 1;
 let previewIndex = 0;
 let latestAnalysis = null;
 let isAnalysisBusy = false;
+let activeShotQueue = readActiveShotQueue();
+let isShotQueueRunning = false;
+let activeManjuGenerationContext = null;
 
-promptInput.value = "面向 AI 图片管理软件的主题背景，现代、克制、有一点东方志怪感但不做古风插画，画面有层次但不抢内容，中心和右侧留出干净空间，适合承载侧边栏、卡片和预览区域。";
+manjuFormula.value = DEFAULT_MANJU_FORMULA;
+if (activeMode === "manju") {
+  activePurpose = "free";
+  purposePreset.value = "free";
+}
+applyWorkbenchMode(activeMode);
+promptInput.value = activeMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
+applyManjuCharacterHandoff();
+applyManjuShotHandoff();
+applyManjuShotQueueHandoff();
 renderStylePresets();
+renderPromptLexicon();
+renderManjuPacks();
+renderManjuCharacterCards();
+renderManjuTabs();
+renderShotQueuePanel();
+modeGeneralButton.addEventListener("click", () => setWorkbenchMode("general"));
+modeManjuButton.addEventListener("click", () => {
+  localStorage.setItem("yaotu-workbench-mode", "general");
+  window.location.href = "/manju.html";
+});
+manjuTabButtons.forEach((button) => {
+  button.addEventListener("click", () => setManjuTab(button.dataset.manjuTab));
+});
 purposePreset.addEventListener("change", () => {
   activePurpose = purposePreset.value;
   updatePromptPreview();
@@ -442,24 +738,75 @@ nextPageButton.addEventListener("click", () => {
     loadImages();
   }
 });
+manjuArchiveTitleFilter.addEventListener("change", () => {
+  galleryPage = 1;
+  loadImages();
+});
+manjuArchiveCategoryFilter.addEventListener("change", () => {
+  galleryPage = 1;
+  loadImages();
+});
+clearManjuArchiveFilterButton.addEventListener("click", () => {
+  manjuArchiveTitleFilter.value = MANJU_ARCHIVE_ALL_VALUE;
+  manjuArchiveCategoryFilter.value = MANJU_ARCHIVE_ALL_VALUE;
+  galleryPage = 1;
+  loadImages();
+});
+exportManjuArchiveButton.addEventListener("click", exportCurrentManjuArchive);
+refreshArchiveQuickButton.addEventListener("click", () => {
+  renderArchiveQuickPanel();
+  showMessage("已刷新归档快捷引用。", false);
+});
+clearShotQueueButton.addEventListener("click", clearShotQueue);
+loadShotQueuePromptButton.addEventListener("click", () => loadActiveShotQueuePrompt(true));
+generateShotQueueCurrentButton.addEventListener("click", () => generateActiveShotQueueFrame());
+generateShotQueueAllButton.addEventListener("click", generateRemainingShotQueueFrames);
 selectPageImages.addEventListener("change", () => {
   setCurrentPageSelection(selectPageImages.checked);
 });
 deleteSelectedButton.addEventListener("click", deleteSelectedImages);
 referenceInput.addEventListener("change", handleReferenceFiles);
+extractReferenceSceneButton.addEventListener("click", extractSceneFromReferences);
 clearReferencesButton.addEventListener("click", clearReferenceImages);
 analysisImageInput.addEventListener("change", handleAnalysisImageFiles);
 clearAnalysisImagesButton.addEventListener("click", clearAnalysisImages);
 extractKeywordsButton.addEventListener("click", extractKeywordsFromUploads);
 extractUploadedStyleButton.addEventListener("click", extractStyleFromUploads);
 extractUploadedPromptButton.addEventListener("click", extractPromptFromUploads);
+savePromptButton.addEventListener("click", saveCurrentPrompt);
+optimizePromptButton.addEventListener("click", optimizeCurrentPrompt);
+lexiconCategorySelect.addEventListener("change", renderPromptLexiconItems);
 newProfileButton.addEventListener("click", createNewProfileDraft);
+deleteProfileButton.addEventListener("click", deleteActiveProfile);
 saveApiButton.addEventListener("click", saveApiSettings);
 testApiButton.addEventListener("click", testApiConnection);
+loadImageModelsButton.addEventListener("click", loadImageModels);
 loadAuxModelsButton.addEventListener("click", loadAuxiliaryModels);
 testAuxButton.addEventListener("click", testAuxiliaryConnection);
 saveAuxButton.addEventListener("click", saveAuxiliarySettings);
+newAuxProfileButton.addEventListener("click", createNewAuxiliaryProfileDraft);
+deleteAuxProfileButton.addEventListener("click", deleteActiveAuxiliaryProfile);
 profileSelect.addEventListener("change", activateSelectedProfile);
+apiProfileManagerSelect.addEventListener("change", syncManagerProfileSelection);
+auxProfileManagerSelect.addEventListener("change", activateSelectedAuxiliaryProfile);
+apiEndpointMode.addEventListener("change", syncModelForEndpointMode);
+apiImageModelSelect.addEventListener("change", () => {
+  if (apiImageModelSelect.value) {
+    apiImageModel.value = apiImageModelSelect.value;
+    syncMainModelWithApiDefault();
+  }
+});
+apiImageModel.addEventListener("input", () => {
+  syncImageModelSelect();
+  syncMainModelWithApiDefault();
+});
+openApiSettingsButton.addEventListener("click", openApiSettings);
+closeApiSettingsButton.addEventListener("click", closeApiSettings);
+apiSettingsModal.addEventListener("click", (event) => {
+  if (event.target === apiSettingsModal) {
+    closeApiSettings();
+  }
+});
 auxUseActiveProfile.addEventListener("change", updateAuxiliaryUi);
 auxModelSelect.addEventListener("change", () => {
   if (auxModelSelect.value) {
@@ -467,6 +814,35 @@ auxModelSelect.addEventListener("change", () => {
   }
 });
 auxModel.addEventListener("input", syncAuxiliaryModelSelect);
+[manjuTitle, manjuScene, manjuReferenceStrategy, manjuShotSize, manjuCamera, manjuEmotion, manjuAction, manjuScenePack, manjuStylePack, manjuCharacterPack, manjuDialogue, manjuFormula].forEach((control) => {
+  control.addEventListener("input", updatePromptPreview);
+  control.addEventListener("change", updatePromptPreview);
+});
+manjuTitle.addEventListener("input", updateManjuArchiveToolbar);
+manjuTitle.addEventListener("change", updateManjuArchiveToolbar);
+manjuTitle.addEventListener("input", () => renderManjuCharacterCards());
+manjuTitle.addEventListener("change", () => renderManjuCharacterCards());
+manjuPackSelect.addEventListener("change", updateManjuPackActions);
+manjuFormulaPreset.addEventListener("change", applyManjuFormulaPreset);
+saveManjuPackButton.addEventListener("click", saveCurrentManjuPack);
+loadManjuPackButton.addEventListener("click", loadSelectedManjuPack);
+deleteManjuPackButton.addEventListener("click", deleteSelectedManjuPack);
+manjuCharacterSelect.addEventListener("change", updateManjuCharacterActions);
+saveManjuCharacterButton.addEventListener("click", saveCurrentManjuCharacterCard);
+loadManjuCharacterButton.addEventListener("click", loadSelectedManjuCharacterCard);
+appendManjuCharacterButton.addEventListener("click", appendSelectedManjuCharacterToPack);
+deleteManjuCharacterButton.addEventListener("click", deleteSelectedManjuCharacterCard);
+[manjuCharacterName, manjuCharacterRole, manjuCharacterPrompt].forEach((control) => {
+  control.addEventListener("input", updateManjuCharacterActions);
+  control.addEventListener("change", updateManjuCharacterActions);
+});
+setManjuDefaultsButton.addEventListener("click", applyManjuGenerationDefaults);
+refreshFormulaButton.addEventListener("click", updatePromptPreview);
+resetFormulaButton.addEventListener("click", () => {
+  manjuFormulaPreset.value = "shot";
+  manjuFormula.value = DEFAULT_MANJU_FORMULA;
+  updatePromptPreview();
+});
 copyAnalysisButton.addEventListener("click", copyAnalysisResult);
 useAnalysisButton.addEventListener("click", useAnalysisResult);
 saveAnalysisPromptButton.addEventListener("click", saveAnalysisPrompt);
@@ -525,6 +901,1741 @@ function renderStylePresets() {
       stylePresetGrid.append(button);
     }
   });
+}
+
+function setManjuTab(tab) {
+  activeManjuTab = ["project", "character", "shot"].includes(tab) ? tab : "project";
+  localStorage.setItem("yaotu-manju-active-tab", activeManjuTab);
+  renderManjuTabs();
+}
+
+function renderManjuTabs() {
+  manjuTabButtons.forEach((button) => {
+    const isActive = button.dataset.manjuTab === activeManjuTab;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
+  });
+
+  manjuTabPanels.forEach((panel) => {
+    const isActive = panel.dataset.manjuPanel === activeManjuTab;
+    panel.classList.toggle("active", isActive);
+    panel.hidden = !isActive;
+    panel.setAttribute("aria-hidden", String(!isActive));
+  });
+}
+
+function applyManjuCharacterHandoff() {
+  const raw = localStorage.getItem(MANJU_CHARACTER_HANDOFF_STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+
+  localStorage.removeItem(MANJU_CHARACTER_HANDOFF_STORAGE_KEY);
+  try {
+    const payload = JSON.parse(raw);
+    const prompt = String(payload?.prompt || "").trim();
+    if (!prompt) {
+      return;
+    }
+
+    syncManjuProjectContext(payload);
+    activeMode = "general";
+    activePurpose = "free";
+    activeStyle = "none";
+    purposePreset.value = "free";
+    promptInput.value = prompt;
+    activeManjuGenerationContext = normalizeManjuGenerationContext(payload.manjuContext || {
+      type: "character-base",
+      title: payload.title,
+      category: "character-profile",
+      characterId: payload.character?.id,
+      characterName: payload.character?.name,
+      characterRole: payload.character?.role,
+    });
+    referenceImages = [];
+    applyCharacterBaseDefaults();
+    localStorage.setItem("yaotu-workbench-mode", activeMode);
+    applyWorkbenchMode(activeMode);
+    renderReferenceImages();
+    updatePromptPreview();
+
+    showMessage(`已载入《${payload.title || "未命名漫剧"}》角色底图任务：${payload.character?.name || "未命名角色"}。生成后会自动归档为人设资料。`, false);
+  } catch {
+    showMessage("B 版角色底图任务读取失败，可以回到漫剧工作台重新发送。", true);
+  }
+}
+
+function applyManjuShotHandoff() {
+  const raw = localStorage.getItem(MANJU_SHOT_HANDOFF_STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+
+  localStorage.removeItem(MANJU_SHOT_HANDOFF_STORAGE_KEY);
+  try {
+    const payload = JSON.parse(raw);
+    const prompt = String(payload?.prompt || "").trim();
+    if (!prompt) {
+      return;
+    }
+
+    syncManjuProjectContext(payload);
+    activeMode = "general";
+    activePurpose = "free";
+    activeStyle = "none";
+    purposePreset.value = "free";
+    promptInput.value = prompt;
+    activeManjuGenerationContext = normalizeManjuGenerationContext(payload.manjuContext || {
+      type: "shot",
+      title: payload.title,
+      category: "shot-candidate",
+      shotNo: payload.shotNo,
+      scene: payload.scene,
+      characters: payload.characters,
+    });
+    referenceImages = referenceImages.filter((image) => image.source !== "manju-relay-reference");
+    if (payload.skipCharacterReferences) {
+      referenceImages = referenceImages.filter((image) => image.source !== "manju-auto-character-reference");
+    } else {
+      applyManjuCharacterReferences(activeManjuGenerationContext);
+    }
+    if (Array.isArray(payload.referenceImages) && payload.referenceImages.length) {
+      referenceImages = mergeReferencePayloads(referenceImages, payload.referenceImages).slice(0, 16);
+    }
+    renderReferenceImages();
+    localStorage.setItem("yaotu-workbench-mode", activeMode);
+    applyWorkbenchMode(activeMode);
+    updatePromptPreview();
+
+    const shotLabel = payload?.shotNo ? ` ${payload.shotNo}` : "";
+    showMessage(payload.type === "yaotu-manju-shot-relay"
+      ? `已从 B 版带入分镜${shotLabel}接力提示词${payload.referenceImages?.length ? "和上一帧参考图" : ""}。`
+      : `已从 B 版带入分镜${shotLabel}提示词，并自动匹配角色参考图。`, false);
+  } catch {
+    showMessage("B 版分镜提示词读取失败，可以回到漫剧工作台重新带入。", true);
+  }
+}
+
+function applyManjuShotQueueHandoff() {
+  const raw = localStorage.getItem(MANJU_SHOT_QUEUE_HANDOFF_STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+
+  localStorage.removeItem(MANJU_SHOT_QUEUE_HANDOFF_STORAGE_KEY);
+  const queue = normalizeShotQueue(raw);
+  if (!queue) {
+    showMessage("B 版连续分镜队列读取失败，可以回到漫剧工作台重新发送。", true);
+    return;
+  }
+
+  activeShotQueue = queue;
+  syncManjuProjectContext(queue);
+  activeMode = "general";
+  activePurpose = "free";
+  activeStyle = "none";
+  purposePreset.value = "free";
+  manjuTitle.value = queue.title;
+  localStorage.setItem("yaotu-workbench-mode", activeMode);
+  writeActiveShotQueue();
+  applyWorkbenchMode(activeMode);
+  applyShotQueueDefaults();
+  loadActiveShotQueuePrompt(false);
+  showMessage(`已接收《${queue.title}》连续关键帧队列：${queue.shots.length} 镜。`, false);
+}
+
+function normalizeManjuContinuityLock(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const frameTotal = Math.min(10, Math.max(1, Number.parseInt(value.frameTotal, 10) || 3));
+  const frameIndex = Math.min(frameTotal, Math.max(1, Number.parseInt(value.frameIndex, 10) || 1));
+  return {
+    groupId: String(value.groupId || "").trim().slice(0, 120),
+    title: String(value.title || "连续镜头").trim().slice(0, 80) || "连续镜头",
+    frameIndex,
+    frameTotal,
+    frameRole: String(value.frameRole || "").trim().slice(0, 80),
+    frameInstruction: String(value.frameInstruction || "").trim().slice(0, 500),
+    previousFramePolicy: String(value.previousFramePolicy || "").trim().slice(0, 80),
+    anchorShotNo: String(value.anchorShotNo || "").trim().slice(0, 80),
+    scene: String(value.scene || "").trim().slice(0, 160),
+    sceneLock: String(value.sceneLock || "").trim().slice(0, 800),
+    characterLock: String(value.characterLock || "").trim().slice(0, 500),
+    motionText: String(value.motionText || "").trim().slice(0, 900),
+  };
+}
+
+function normalizeShotQueue(value) {
+  let source = value;
+  if (typeof value === "string") {
+    try {
+      source = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  if (!source || typeof source !== "object" || !Array.isArray(source.shots)) {
+    return null;
+  }
+
+  const shots = source.shots.slice(0, 10).map((shot, index) => {
+    const prompt = String(shot?.prompt || "").trim();
+    if (!prompt) {
+      return null;
+    }
+    return {
+      key: String(shot.key || `${shot.shotNo || "shot"}-${index}`).slice(0, 120),
+      queueIndex: index,
+      sourceIndex: Number.parseInt(shot.sourceIndex, 10) || index,
+      prompt,
+      shotNo: String(shot.shotNo || `镜头 ${index + 1}`).trim().slice(0, 80),
+      episodeNo: Number.parseInt(shot.episodeNo, 10) || 1,
+      sceneNo: Number.parseInt(shot.sceneNo, 10) || 1,
+      scene: String(shot.scene || shot.sceneTitle || "").trim().slice(0, 160),
+      sceneTitle: String(shot.sceneTitle || "").trim().slice(0, 160),
+      characters: Array.isArray(shot.characters)
+        ? shot.characters.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 12)
+        : [],
+      characterBindings: normalizeManjuCharacterBindings(shot.characterBindings),
+      visual: String(shot.visual || "").trim().slice(0, 500),
+      continuityLock: normalizeManjuContinuityLock(shot.continuityLock || shot.manjuContext?.continuityLock),
+      manjuContext: normalizeManjuGenerationContext(shot.manjuContext || {
+        type: "shot",
+        title: source.title,
+        category: "shot-candidate",
+        shotNo: shot.shotNo,
+        scene: shot.scene || shot.sceneTitle,
+        queueId: source.id,
+        characters: shot.characters,
+        characterBindings: shot.characterBindings,
+      }),
+      status: ["done", "error", "pending"].includes(shot.status) ? shot.status : "pending",
+      imageIds: Array.isArray(shot.imageIds) ? shot.imageIds.filter(Boolean).slice(0, 20) : [],
+      error: String(shot.error || "").trim().slice(0, 500),
+    };
+  }).filter(Boolean);
+
+  if (!shots.length) {
+    return null;
+  }
+
+  const activeIndex = Math.min(
+    shots.length - 1,
+    Math.max(0, Number.parseInt(source.activeIndex, 10) || 0),
+  );
+  return {
+    type: "yaotu-manju-shot-queue",
+    queueKind: String(source.queueKind || "").trim().slice(0, 80),
+    version: 1,
+    id: String(source.id || `queue-${Date.now().toString(36)}`).slice(0, 120),
+    title: String(source.title || "未命名漫剧").trim().slice(0, 80) || "未命名漫剧",
+    project: source.project && typeof source.project === "object" ? source.project : null,
+    previousFramePolicy: String(source.previousFramePolicy || "").trim().slice(0, 80),
+    createdAt: String(source.createdAt || new Date().toISOString()),
+    updatedAt: String(source.updatedAt || new Date().toISOString()),
+    activeIndex,
+    shots,
+  };
+}
+
+function syncManjuProjectContext(source) {
+  const project = source?.project && typeof source.project === "object" ? source.project : {};
+  const title = String(project.title || source?.title || "").trim();
+  if (title) {
+    manjuTitle.value = title;
+    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, title);
+  }
+
+  const packSource = project.pack && typeof project.pack === "object" ? project.pack : null;
+  if (packSource) {
+    const packs = readManjuPacks();
+    const pack = {
+      ...packSource,
+      id: packSource.id || packs.find((item) => item.title === title)?.id || makeManjuPackId(title),
+      title: packSource.title || title,
+      updatedAt: new Date().toISOString(),
+    };
+    writeManjuPacks([pack, ...packs.filter((item) => item.id !== pack.id && item.title !== pack.title)]);
+    applyManjuPack(pack);
+    renderManjuPacks(pack.id);
+  }
+
+  const projectCharacters = Array.isArray(project.characters) ? project.characters : [];
+  if (projectCharacters.length) {
+    const existing = readManjuCharacterCards();
+    const next = [...existing];
+    projectCharacters.forEach((character) => {
+      const normalized = normalizeManjuCharacterCard({
+        ...character,
+        title: character.title || title,
+      });
+      if (!normalized.name || !normalized.prompt) {
+        return;
+      }
+      const index = next.findIndex((item) => (
+        item.id === normalized.id
+        || (item.title === normalized.title && item.name === normalized.name)
+      ));
+      if (index >= 0) {
+        next[index] = {
+          ...next[index],
+          ...normalized,
+          assets: {
+            ...(next[index].assets || {}),
+            ...(normalized.assets || {}),
+          },
+          updatedAt: normalized.updatedAt || next[index].updatedAt,
+        };
+      } else {
+        next.push(normalized);
+      }
+    });
+    writeManjuCharacterCards(next);
+    renderManjuCharacterCards();
+  }
+}
+
+function normalizeManjuGenerationContext(context) {
+  if (!context || typeof context !== "object") {
+    return null;
+  }
+  const type = String(context.type || "shot").trim();
+  const category = isValidManjuArchiveCategory(context.category)
+    ? context.category
+    : type === "character-base" ? "character-profile" : DEFAULT_MANJU_ARCHIVE_CATEGORY;
+  const characterName = String(context.characterName || "").trim().slice(0, 120);
+  const characters = Array.isArray(context.characters)
+    ? context.characters.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 12)
+    : [];
+  if (!characters.length && characterName) {
+    characters.push(characterName);
+  }
+  const characterBindings = normalizeManjuCharacterBindings(context.characterBindings, characters);
+  return {
+    type,
+    title: String(context.title || getCurrentManjuTitle()).trim() || "未命名漫剧",
+    category,
+    characterId: String(context.characterId || "").trim().slice(0, 120),
+    characterName,
+    characterRole: String(context.characterRole || "").trim().slice(0, 120),
+    variantId: String(context.variantId || "").trim().slice(0, 120),
+    variantName: String(context.variantName || "").trim().slice(0, 120),
+    shotNo: String(context.shotNo || "").trim().slice(0, 80),
+    sourceShotNo: String(context.sourceShotNo || "").trim().slice(0, 80),
+    scene: String(context.scene || context.sceneTitle || "").trim().slice(0, 160),
+    sceneTitle: String(context.sceneTitle || "").trim().slice(0, 160),
+    queueId: String(context.queueId || "").trim().slice(0, 120),
+    continuityLock: normalizeManjuContinuityLock(context.continuityLock),
+    characters,
+    characterBindings,
+  };
+}
+
+function getManjuGenerationContextForImage(image) {
+  const requestContext = normalizeManjuGenerationContext(image?.request?.manjuContext || image?.params?.manjuContext);
+  if (requestContext) {
+    return requestContext;
+  }
+
+  const archive = readManjuArchives()[image?.id];
+  if (!archive) {
+    return null;
+  }
+
+  const characterAssetCategories = new Set(["character-profile", "turnaround", "detail", "expression"]);
+  return normalizeManjuGenerationContext({
+    type: characterAssetCategories.has(archive.category) ? "character-base" : "shot",
+    title: archive.title,
+    category: archive.category,
+    shotNo: archive.shotNo,
+    sourceShotNo: archive.sourceShotNo,
+    scene: archive.scene,
+    queueId: archive.queueId,
+    continuityLock: archive.continuityLock,
+    characterId: archive.characterId,
+    characterName: archive.characterName,
+    characters: archive.characters,
+    variantId: archive.variantId,
+    variantName: archive.variantName,
+    characterBindings: archive.characterBindings,
+  });
+}
+
+function normalizeManjuCharacterBindings(bindings = [], fallbackNames = []) {
+  const source = Array.isArray(bindings) && bindings.length
+    ? bindings
+    : [];
+  const normalized = source.map((binding) => {
+    if (!binding || typeof binding !== "object") {
+      return null;
+    }
+    const characterName = String(binding.characterName || binding.name || "").trim().slice(0, 120);
+    const characterId = String(binding.characterId || "").trim().slice(0, 120);
+    if (!characterName && !characterId) {
+      return null;
+    }
+    const variantId = String(binding.variantId || "").trim().slice(0, 120);
+    return {
+      characterId,
+      characterName,
+      variantId: variantId || "__default",
+      variantName: String(binding.variantName || (variantId ? "" : "原身")).trim().slice(0, 120) || (variantId ? "" : "原身"),
+    };
+  }).filter(Boolean).slice(0, 12);
+  if (normalized.length) {
+    return normalized;
+  }
+  return Array.isArray(fallbackNames)
+    ? fallbackNames.map((name) => ({
+      characterId: "",
+      characterName: String(name || "").trim().slice(0, 120),
+      variantId: "__default",
+      variantName: "原身",
+    })).filter((item) => item.characterName).slice(0, 12)
+    : [];
+}
+
+function normalizeManjuCharacterCard(card) {
+  const now = new Date().toISOString();
+  return {
+    id: String(card?.id || makeManjuCharacterCardId(card?.title || getCurrentManjuTitle(), card?.name || "角色")).trim(),
+    title: String(card?.title || getCurrentManjuTitle()).trim() || "未命名漫剧",
+    name: String(card?.name || "").trim(),
+    role: String(card?.role || "").trim(),
+    prompt: String(card?.prompt || "").trim(),
+    assets: card?.assets && typeof card.assets === "object" ? card.assets : {},
+    createdAt: String(card?.createdAt || now),
+    updatedAt: String(card?.updatedAt || now),
+  };
+}
+
+function applyCharacterBaseDefaults() {
+  setModelInputValue("gpt-image-2");
+  sizeSelect.value = "1024x1536";
+  document.querySelector("#quality").value = "high";
+  document.querySelector("#count").value = "4";
+  document.querySelector("#background").value = "opaque";
+  updateSizeUi();
+}
+
+function applyManjuCharacterReferences(context) {
+  referenceImages = referenceImages.filter((image) => image.source !== "manju-auto-character-reference");
+  const autoReferences = findManjuCharacterReferencesForContext(context);
+  referenceImages = mergeReferencePayloads(referenceImages, autoReferences).slice(0, 16);
+  renderReferenceImages();
+}
+
+function findManjuCharacterReferencesForContext(context) {
+  const normalized = normalizeManjuGenerationContext(context);
+  if (!normalized || normalized.type === "character-base") {
+    return [];
+  }
+  const title = normalized.title;
+  const bindings = normalized.characterBindings.length
+    ? normalized.characterBindings
+    : normalizeManjuCharacterBindings([], normalized.characters.length ? normalized.characters : [normalized.characterName].filter(Boolean));
+  if (!bindings.length) {
+    return [];
+  }
+
+  const referenceCategories = new Set(["character-profile", "turnaround", "detail", "expression"]);
+  const archives = Object.values(readManjuArchives())
+    .filter((record) => record.title === title && referenceCategories.has(record.category) && record.url);
+  const references = [];
+  bindings.forEach((binding) => {
+    const name = binding.characterName;
+    const key = normalizeManjuMatchKey(name);
+    const matched = archives
+      .filter((record) => {
+        const characterMatch = binding.characterId
+          ? record.characterId === binding.characterId
+          : [record.characterName, record.note, record.shotNo, record.scene].map(normalizeManjuMatchKey)
+            .some((field) => field && (field.includes(key) || key.includes(field)));
+        return characterMatch && manjuArchiveVariantMatchesBinding(record, binding);
+      })
+      .slice(0, 2);
+    matched.forEach((record) => {
+      references.push({
+        id: `manju-ref-${record.imageId}`,
+        name: `${name}${binding.variantName && binding.variantName !== "原身" ? ` · ${binding.variantName}` : ""} · ${getManjuArchiveCategoryLabel(record.category)}`,
+        url: record.url,
+        thumb: record.url,
+        source: "manju-auto-character-reference",
+      });
+    });
+  });
+  return references.slice(0, 8);
+}
+
+function manjuArchiveVariantMatchesBinding(record, binding) {
+  const bindingVariantId = String(binding?.variantId || "__default").trim();
+  const bindingVariantNameKey = normalizeManjuMatchKey(binding?.variantName);
+  const recordVariantId = String(record?.variantId || "").trim();
+  const recordVariantNameKey = normalizeManjuMatchKey(record?.variantName);
+  if (!bindingVariantId || bindingVariantId === "__default") {
+    return !recordVariantId && !recordVariantNameKey;
+  }
+  if (recordVariantId && recordVariantId === bindingVariantId) {
+    return true;
+  }
+  return Boolean(bindingVariantNameKey && recordVariantNameKey && bindingVariantNameKey === recordVariantNameKey);
+}
+
+function mergeReferencePayloads(primary = [], secondary = []) {
+  const merged = [];
+  const seen = new Set();
+  [...primary, ...secondary].forEach((image) => {
+    if (!image || typeof image !== "object") {
+      return;
+    }
+    const key = image.url || image.dataUrl || image.id || image.name;
+    if (!key || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    merged.push(image);
+  });
+  return merged;
+}
+
+function findShotQueuePreviousFrameReferences(shot) {
+  const policy = shot?.continuityLock?.previousFramePolicy || activeShotQueue?.previousFramePolicy;
+  if (policy !== "previous-generated" || !activeShotQueue?.shots?.length) {
+    return [];
+  }
+  const currentIndex = activeShotQueue.shots.findIndex((item) => item.key === shot?.key);
+  if (currentIndex <= 0) {
+    return [];
+  }
+  const previous = activeShotQueue.shots
+    .slice(0, currentIndex)
+    .reverse()
+    .find((item) => item.status === "done" && Array.isArray(item.imageIds) && item.imageIds.length > 0);
+  if (!previous) {
+    return [];
+  }
+  const archives = readManjuArchives();
+  return previous.imageIds
+    .slice()
+    .reverse()
+    .map((imageId) => archives[imageId])
+    .filter((record) => record?.url)
+    .slice(0, 1)
+    .map((record) => ({
+      id: `manju-prev-frame-${record.imageId}`,
+      name: `上一帧参考 · ${previous.shotNo || record.shotNo || "连续镜头"}`,
+      url: record.url,
+      thumb: record.url,
+      source: "manju-previous-frame-reference",
+    }));
+}
+
+function normalizeManjuMatchKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s"'“”‘’《》<>【】[\]（）()：:，,。.;；、|｜/／_-]+/g, "");
+}
+
+function readActiveShotQueue() {
+  return normalizeShotQueue(localStorage.getItem(MANJU_ACTIVE_SHOT_QUEUE_STORAGE_KEY));
+}
+
+function writeActiveShotQueue() {
+  if (!activeShotQueue) {
+    localStorage.removeItem(MANJU_ACTIVE_SHOT_QUEUE_STORAGE_KEY);
+    return;
+  }
+  activeShotQueue.updatedAt = new Date().toISOString();
+  localStorage.setItem(MANJU_ACTIVE_SHOT_QUEUE_STORAGE_KEY, JSON.stringify(activeShotQueue));
+}
+
+function getActiveShotQueueItem() {
+  if (!activeShotQueue?.shots?.length) {
+    return null;
+  }
+  activeShotQueue.activeIndex = Math.min(
+    activeShotQueue.shots.length - 1,
+    Math.max(0, Number.parseInt(activeShotQueue.activeIndex, 10) || 0),
+  );
+  return activeShotQueue.shots[activeShotQueue.activeIndex];
+}
+
+function renderShotQueuePanel() {
+  if (!shotQueuePanel) {
+    return;
+  }
+  if (!activeShotQueue?.shots?.length) {
+    shotQueuePanel.hidden = true;
+    document.body.classList.remove("shot-queue-mode");
+    return;
+  }
+
+  const current = getActiveShotQueueItem();
+  const doneCount = activeShotQueue.shots.filter((shot) => shot.status === "done").length;
+  shotQueuePanel.hidden = false;
+  document.body.classList.add("shot-queue-mode");
+  if (manjuTitle.value.trim() !== activeShotQueue.title) {
+    manjuTitle.value = activeShotQueue.title;
+  }
+  shotQueueTitle.textContent = "连续关键帧";
+  shotQueueProgress.textContent = `${doneCount} / ${activeShotQueue.shots.length}`;
+  shotQueueCurrent.textContent = current
+    ? `${current.shotNo} · ${current.scene || current.sceneTitle || "未指定场景"}`
+    : "等待分镜";
+
+  shotQueueList.innerHTML = "";
+  activeShotQueue.shots.forEach((shot, index) => {
+    const item = document.createElement("li");
+    item.className = `${index === activeShotQueue.activeIndex ? "active " : ""}${shot.status}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    const shotName = document.createElement("strong");
+    shotName.textContent = shot.shotNo;
+    const status = document.createElement("span");
+    status.textContent = shot.status === "done" ? "已生成" : shot.status === "error" ? "失败" : "待生成";
+    button.append(shotName, status);
+    button.title = shot.visual || shot.prompt;
+    button.addEventListener("click", () => {
+      activeShotQueue.activeIndex = index;
+      writeActiveShotQueue();
+      loadActiveShotQueuePrompt(false);
+      renderShotQueuePanel();
+    });
+    item.append(button);
+    shotQueueList.append(item);
+  });
+
+  const hasPending = activeShotQueue.shots.some((shot) => shot.status !== "done");
+  loadShotQueuePromptButton.disabled = isShotQueueRunning || !current;
+  generateShotQueueCurrentButton.disabled = isShotQueueRunning || !current;
+  generateShotQueueAllButton.disabled = isShotQueueRunning || !hasPending;
+  clearShotQueueButton.disabled = isShotQueueRunning;
+}
+
+function loadActiveShotQueuePrompt(showToast = true) {
+  const shot = getActiveShotQueueItem();
+  if (!shot) {
+    return;
+  }
+  activeMode = "general";
+  activePurpose = "free";
+  activeStyle = "none";
+  purposePreset.value = "free";
+  promptInput.value = shot.prompt;
+  manjuTitle.value = activeShotQueue.title;
+  activeManjuGenerationContext = normalizeManjuGenerationContext(shot.manjuContext || {
+    type: "shot",
+    title: activeShotQueue.title,
+    category: "shot-candidate",
+    shotNo: shot.shotNo,
+    scene: shot.scene || shot.sceneTitle,
+    queueId: activeShotQueue.id,
+    characters: shot.characters,
+  });
+  applyManjuCharacterReferences(activeManjuGenerationContext);
+  referenceImages = referenceImages.filter((image) => image.source !== "manju-previous-frame-reference");
+  const continuityReferences = findShotQueuePreviousFrameReferences(shot);
+  if (continuityReferences.length) {
+    referenceImages = mergeReferencePayloads(referenceImages, continuityReferences).slice(0, 16);
+    renderReferenceImages();
+  }
+  localStorage.setItem("yaotu-workbench-mode", activeMode);
+  applyWorkbenchMode(activeMode);
+  updatePromptPreview();
+  if (showToast) {
+    showMessage(`已载入 ${shot.shotNo} 的生图提示词。`, false);
+  }
+}
+
+function applyShotQueueDefaults() {
+  setModelInputValue("gpt-image-2");
+  sizeSelect.value = "2160x3840";
+  document.querySelector("#quality").value = "high";
+  document.querySelector("#count").value = "1";
+  document.querySelector("#background").value = "opaque";
+  updateSizeUi();
+}
+
+function clearShotQueue() {
+  if (isShotQueueRunning) {
+    return;
+  }
+  if (!window.confirm("清空当前连续关键帧队列？已归档的候选图不会删除。")) {
+    return;
+  }
+  activeShotQueue = null;
+  writeActiveShotQueue();
+  renderShotQueuePanel();
+  showMessage("已清空连续关键帧队列。", false);
+}
+
+async function generateActiveShotQueueFrame(allowWhileRunning = false) {
+  if (isShotQueueRunning && !allowWhileRunning) {
+    return false;
+  }
+  const shot = getActiveShotQueueItem();
+  if (!shot) {
+    showMessage("当前没有可生成的分镜队列。", true);
+    return false;
+  }
+  const shouldManageBusy = !isShotQueueRunning;
+  if (shouldManageBusy) {
+    isShotQueueRunning = true;
+    renderShotQueuePanel();
+  }
+
+  loadActiveShotQueuePrompt(false);
+  applyShotQueueDefaults();
+
+  const payload = collectPayload();
+  payload.prompt = shot.prompt;
+  payload.count = 1;
+  payload.referenceImages = mergeReferencePayloads(
+    mergeReferencePayloads(
+      payload.referenceImages,
+      findManjuCharacterReferencesForContext(shot.manjuContext || activeManjuGenerationContext),
+    ),
+    findShotQueuePreviousFrameReferences(shot),
+  );
+  payload.manjuContext = normalizeManjuGenerationContext(shot.manjuContext || activeManjuGenerationContext || {
+    type: "shot",
+    title: activeShotQueue.title,
+    category: "shot-candidate",
+    shotNo: shot.shotNo,
+    scene: shot.scene || shot.sceneTitle,
+    queueId: activeShotQueue.id,
+    characters: shot.characters,
+  });
+  payload.autoArchiveManju = false;
+
+  try {
+    const result = await runGeneration(payload, `正在生成 ${shot.shotNo} 关键帧。`);
+    if (!result?.images?.length) {
+      shot.status = "error";
+      shot.error = "生成失败或没有返回图片。";
+      writeActiveShotQueue();
+      renderShotQueuePanel();
+      return false;
+    }
+
+    archiveShotQueueImages(result.images, shot);
+    shot.status = "done";
+    shot.error = "";
+    shot.imageIds = Array.from(new Set([...(shot.imageIds || []), ...result.images.map((image) => image.id).filter(Boolean)]));
+    moveShotQueueToNextPending();
+    writeActiveShotQueue();
+    renderShotQueuePanel();
+    await loadImages();
+    showMessage(`${shot.shotNo} 已生成并归档为分镜候选。`, false);
+    return true;
+  } finally {
+    if (shouldManageBusy) {
+      isShotQueueRunning = false;
+      renderShotQueuePanel();
+    }
+  }
+}
+
+async function generateRemainingShotQueueFrames() {
+  if (!activeShotQueue?.shots?.length || isShotQueueRunning) {
+    return;
+  }
+  isShotQueueRunning = true;
+  renderShotQueuePanel();
+  try {
+    let generatedCount = 0;
+    while (activeShotQueue?.shots?.some((shot) => shot.status !== "done")) {
+      const nextIndex = activeShotQueue.shots.findIndex((shot) => shot.status !== "done");
+      if (nextIndex < 0) {
+        break;
+      }
+      activeShotQueue.activeIndex = nextIndex;
+      writeActiveShotQueue();
+      renderShotQueuePanel();
+      const ok = await generateActiveShotQueueFrame(true);
+      if (!ok) {
+        break;
+      }
+      generatedCount += 1;
+    }
+    showMessage(generatedCount > 0
+      ? `连续关键帧已顺序生成 ${generatedCount} 镜。`
+      : "没有新的关键帧需要生成。", false);
+  } finally {
+    isShotQueueRunning = false;
+    renderShotQueuePanel();
+  }
+}
+
+function moveShotQueueToNextPending() {
+  if (!activeShotQueue?.shots?.length) {
+    return;
+  }
+  const nextIndex = activeShotQueue.shots.findIndex((shot) => shot.status !== "done");
+  activeShotQueue.activeIndex = nextIndex >= 0 ? nextIndex : activeShotQueue.shots.length - 1;
+}
+
+function archiveShotQueueImages(images, shot) {
+  const archives = readManjuArchives();
+  const now = new Date().toISOString();
+  const context = normalizeManjuGenerationContext(shot.manjuContext || {
+    type: "shot",
+    title: activeShotQueue.title,
+    category: "shot-candidate",
+    shotNo: shot.shotNo,
+    scene: shot.scene || shot.sceneTitle,
+    queueId: activeShotQueue.id,
+    characters: shot.characters,
+  });
+  images.forEach((image, index) => {
+    if (!image?.id) {
+      return;
+    }
+    archives[image.id] = {
+      imageId: image.id,
+      title: context?.title || activeShotQueue.title,
+      category: context?.category || "shot-candidate",
+      note: buildManjuArchiveNote(context, index, images.length) || `${shot.shotNo}${images.length > 1 ? ` 候选${index + 1}` : ""}`,
+      shotNo: context?.shotNo || shot.shotNo,
+      sourceShotNo: context?.sourceShotNo || "",
+      scene: context?.scene || shot.scene || shot.sceneTitle || "",
+      queueId: context?.queueId || activeShotQueue.id,
+      continuityLock: context?.continuityLock || shot.continuityLock || null,
+      characterId: context?.characterId || "",
+      characterName: context?.characterName || "",
+      characters: context?.characters || [],
+      characterBindings: context?.characterBindings || [],
+      url: image.url || "",
+      batchId: image.batchId || "",
+      createdAt: image.createdAt || now,
+      updatedAt: now,
+    };
+  });
+  writeManjuArchives(archives);
+  updateManjuArchiveToolbar();
+}
+
+function archiveGeneratedManjuImages(images, context) {
+  const normalized = normalizeManjuGenerationContext(context);
+  if (!normalized || !Array.isArray(images) || images.length === 0) {
+    return false;
+  }
+
+  const archives = readManjuArchives();
+  const now = new Date().toISOString();
+  let archivedCount = 0;
+  images.forEach((image, index) => {
+    if (!image?.id) {
+      return;
+    }
+    archives[image.id] = {
+      imageId: image.id,
+      title: normalized.title,
+      category: normalized.category,
+      note: buildManjuArchiveNote(normalized, index, images.length),
+      shotNo: normalized.shotNo,
+      sourceShotNo: normalized.sourceShotNo,
+      scene: normalized.scene,
+      queueId: normalized.queueId,
+      continuityLock: normalized.continuityLock,
+      characterId: normalized.characterId,
+      characterName: normalized.characterName,
+      characters: normalized.characters,
+      characterBindings: normalized.characterBindings,
+      variantId: normalized.variantId,
+      variantName: normalized.variantName,
+      url: image.url || "",
+      batchId: image.batchId || "",
+      createdAt: image.createdAt || now,
+      updatedAt: now,
+    };
+    archivedCount += 1;
+  });
+
+  if (archivedCount === 0) {
+    return false;
+  }
+
+  writeManjuArchives(archives);
+  if (normalized.type === "character-base") {
+    updateManjuCharacterAssetsFromImages(normalized, images);
+  }
+  updateManjuArchiveToolbar();
+  return true;
+}
+
+function buildManjuArchiveNote(context, index, total) {
+  const suffix = total > 1 ? `候选${index + 1}` : "";
+  if (context?.type === "character-base") {
+    return [context.characterName || "角色底图", suffix].filter(Boolean).join(" · ").slice(0, 160);
+  }
+  return [
+    context?.shotNo || "分镜",
+    context?.characters?.join("、") || "",
+    suffix,
+  ].filter(Boolean).join(" · ").slice(0, 160);
+}
+
+function updateManjuCharacterAssetsFromImages(context, images) {
+  const characterName = context?.characterName || "";
+  if (!characterName || !Array.isArray(images) || images.length === 0) {
+    return;
+  }
+
+  const cards = readManjuCharacterCards();
+  const title = context.title || getCurrentManjuTitle();
+  const index = cards.findIndex((card) => (
+    (context.characterId && card.id === context.characterId)
+    || (card.title === title && normalizeManjuMatchKey(card.name) === normalizeManjuMatchKey(characterName))
+  ));
+  if (index < 0) {
+    return;
+  }
+
+  const existing = cards[index];
+  const baseImages = images
+    .filter((image) => image?.id)
+    .map((image) => ({
+      imageId: image.id,
+      url: image.url || "",
+      batchId: image.batchId || "",
+      createdAt: image.createdAt || new Date().toISOString(),
+    }));
+  const previousBaseImages = Array.isArray(existing.assets?.baseImages) ? existing.assets.baseImages : [];
+  cards[index] = {
+    ...existing,
+    assets: {
+      ...(existing.assets || {}),
+      primaryImageId: existing.assets?.primaryImageId || baseImages[0]?.imageId || "",
+      baseImages: [...baseImages, ...previousBaseImages]
+        .filter((item, itemIndex, list) => item?.imageId && list.findIndex((other) => other.imageId === item.imageId) === itemIndex)
+        .slice(0, 24),
+    },
+    updatedAt: new Date().toISOString(),
+  };
+  writeManjuCharacterCards(cards);
+  renderManjuCharacterCards(cards[index].id);
+}
+
+function setWorkbenchMode(mode) {
+  const previousMode = activeMode;
+  const previousDefault = previousMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
+  const nextMode = mode === "manju" ? "manju" : "general";
+  const nextDefault = nextMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
+  const shouldSwapPrompt = !promptInput.value.trim() || promptInput.value.trim() === previousDefault;
+  activeMode = nextMode;
+  if (shouldSwapPrompt) {
+    promptInput.value = nextDefault;
+  }
+  if (activeMode === "manju" && activePurpose === "software") {
+    activePurpose = "free";
+    purposePreset.value = "free";
+  }
+  localStorage.setItem("yaotu-workbench-mode", activeMode);
+  syncModeUrl(activeMode);
+  applyWorkbenchMode(activeMode);
+  updatePromptPreview();
+  loadImages();
+}
+
+function syncModeUrl(mode) {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("mode") === mode) {
+    return;
+  }
+  url.searchParams.set("mode", mode);
+  window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
+}
+
+function applyWorkbenchMode(mode) {
+  const isManju = mode === "manju";
+  document.body.classList.toggle("manju-mode", isManju);
+  modeGeneralButton.classList.toggle("active", !isManju);
+  modeManjuButton.classList.toggle("active", isManju);
+  manjuPanel.hidden = !isManju;
+  promptLabel.textContent = isManju ? "分镜描述" : "画面方向";
+  promptInput.placeholder = isManju
+    ? `例如：${DEFAULT_MANJU_PROMPT}`
+    : "例如：深色 AI 图片管理工具背景，带细腻玻璃质感、微弱数据流，中心和右侧留出干净区域，适合承载软件面板。";
+  updateManjuArchiveToolbar();
+}
+
+function openApiSettings() {
+  apiSettingsModal.classList.add("open");
+  apiSettingsModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  renderProfiles();
+}
+
+function closeApiSettings() {
+  apiSettingsModal.classList.remove("open");
+  apiSettingsModal.setAttribute("aria-hidden", "true");
+  if (!previewModal.classList.contains("open")) {
+    document.body.style.overflow = "";
+  }
+}
+
+function readManjuPacks() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MANJU_PACKS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManjuPacks(packs) {
+  localStorage.setItem(MANJU_PACKS_STORAGE_KEY, JSON.stringify(packs.slice(0, 80)));
+}
+
+function renderManjuPacks(selectedId = manjuPackSelect.value) {
+  const packs = readManjuPacks().sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+  manjuPackSelect.innerHTML = "";
+  const draftOption = document.createElement("option");
+  draftOption.value = "";
+  draftOption.textContent = "当前草稿 / 未保存";
+  manjuPackSelect.append(draftOption);
+
+  packs.forEach((pack) => {
+    const option = document.createElement("option");
+    option.value = pack.id;
+    option.textContent = pack.title || "未命名漫剧包";
+    manjuPackSelect.append(option);
+  });
+
+  if (packs.some((pack) => pack.id === selectedId)) {
+    manjuPackSelect.value = selectedId;
+  }
+  updateManjuPackActions();
+}
+
+function updateManjuPackActions() {
+  const hasSelectedPack = Boolean(manjuPackSelect.value);
+  loadManjuPackButton.disabled = !hasSelectedPack;
+  deleteManjuPackButton.disabled = !hasSelectedPack;
+}
+
+function makeManjuPackId(title) {
+  const normalized = String(title || "manju-pack")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "manju-pack";
+  return `${normalized}-${Date.now().toString(36)}`;
+}
+
+function collectManjuPackPayload(existingId = "") {
+  const title = manjuTitle.value.trim();
+  const now = new Date().toISOString();
+  return {
+    id: existingId || makeManjuPackId(title),
+    title,
+    formulaPreset: manjuFormulaPreset.value,
+    scene: manjuScene.value.trim(),
+    referenceStrategy: manjuReferenceStrategy.value,
+    shotSize: manjuShotSize.value,
+    camera: manjuCamera.value,
+    emotion: manjuEmotion.value.trim(),
+    action: manjuAction.value.trim(),
+    scenePack: manjuScenePack.value.trim(),
+    stylePack: manjuStylePack.value.trim(),
+    characterPack: manjuCharacterPack.value.trim(),
+    dialogue: manjuDialogue.value.trim(),
+    formula: manjuFormula.value,
+    updatedAt: now,
+  };
+}
+
+function applyManjuPack(pack) {
+  manjuTitle.value = pack.title || "";
+  manjuFormulaPreset.value = MANJU_FORMULA_PRESETS[pack.formulaPreset] ? pack.formulaPreset : "shot";
+  manjuScene.value = pack.scene || "";
+  manjuReferenceStrategy.value = pack.referenceStrategy || manjuReferenceStrategy.options[0]?.value || "";
+  manjuShotSize.value = pack.shotSize || "中景";
+  manjuCamera.value = pack.camera || "平视镜头";
+  manjuEmotion.value = pack.emotion || "";
+  manjuAction.value = pack.action || "";
+  manjuScenePack.value = pack.scenePack || "";
+  manjuStylePack.value = pack.stylePack || "";
+  manjuCharacterPack.value = pack.characterPack || "";
+  manjuDialogue.value = pack.dialogue || "";
+  manjuFormula.value = pack.formula || MANJU_FORMULA_PRESETS[manjuFormulaPreset.value] || DEFAULT_MANJU_FORMULA;
+  updatePromptPreview();
+  renderManjuCharacterCards();
+  updateManjuArchiveToolbar();
+}
+
+function saveCurrentManjuPack() {
+  const title = manjuTitle.value.trim();
+  if (!title) {
+    showMessage("先给漫剧包填一个剧名，再保存。", true);
+    return;
+  }
+
+  const packs = readManjuPacks();
+  const selectedId = manjuPackSelect.value;
+  const sameTitle = packs.find((pack) => pack.title === title);
+  const targetId = selectedId || sameTitle?.id || "";
+  const payload = collectManjuPackPayload(targetId);
+  const nextPacks = [payload, ...packs.filter((pack) => pack.id !== payload.id)];
+  writeManjuPacks(nextPacks);
+  renderManjuPacks(payload.id);
+  showMessage(`漫剧包“${payload.title}”已保存。`, false);
+}
+
+function loadSelectedManjuPack() {
+  const pack = readManjuPacks().find((item) => item.id === manjuPackSelect.value);
+  if (!pack) {
+    showMessage("先选择一个已保存的漫剧包。", true);
+    return;
+  }
+  if (activeMode !== "manju") {
+    setWorkbenchMode("manju");
+  }
+  applyManjuPack(pack);
+  showMessage(`已加载漫剧包“${pack.title || "未命名"}”。`, false);
+}
+
+function deleteSelectedManjuPack() {
+  const packs = readManjuPacks();
+  const pack = packs.find((item) => item.id === manjuPackSelect.value);
+  if (!pack) {
+    showMessage("先选择一个已保存的漫剧包。", true);
+    return;
+  }
+  if (!window.confirm(`确定删除漫剧包“${pack.title || "未命名"}”吗？`)) {
+    return;
+  }
+  writeManjuPacks(packs.filter((item) => item.id !== pack.id));
+  renderManjuPacks("");
+  showMessage("漫剧包已删除。", false);
+}
+
+function readManjuCharacterCards() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MANJU_CHARACTER_CARDS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item && typeof item === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeManjuCharacterCards(cards) {
+  localStorage.setItem(MANJU_CHARACTER_CARDS_STORAGE_KEY, JSON.stringify(cards.slice(0, 300)));
+}
+
+function makeManjuCharacterCardId(title, name) {
+  const normalized = `${title || "manju"}-${name || "character"}`
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "manju-character";
+  return `${normalized}-${Date.now().toString(36)}`;
+}
+
+function getManjuCharacterCardsForTitle(title = getCurrentManjuTitle()) {
+  return readManjuCharacterCards()
+    .filter((card) => card.title === title)
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hans-CN"));
+}
+
+function renderManjuCharacterCards(selectedId = manjuCharacterSelect.value) {
+  const cards = getManjuCharacterCardsForTitle();
+  manjuCharacterSelect.innerHTML = "";
+
+  const draftOption = document.createElement("option");
+  draftOption.value = "";
+  draftOption.textContent = "当前草稿 / 未保存";
+  manjuCharacterSelect.append(draftOption);
+
+  cards.forEach((card) => {
+    const option = document.createElement("option");
+    option.value = card.id;
+    option.textContent = card.role ? `${card.name} · ${card.role}` : card.name;
+    manjuCharacterSelect.append(option);
+  });
+
+  if (cards.some((card) => card.id === selectedId)) {
+    manjuCharacterSelect.value = selectedId;
+  }
+  updateManjuCharacterActions();
+}
+
+function updateManjuCharacterActions() {
+  const hasSelectedCard = Boolean(manjuCharacterSelect.value);
+  const hasDraft = Boolean(manjuCharacterName.value.trim() || manjuCharacterPrompt.value.trim());
+  saveManjuCharacterButton.disabled = !hasDraft;
+  loadManjuCharacterButton.disabled = !hasSelectedCard;
+  deleteManjuCharacterButton.disabled = !hasSelectedCard;
+  appendManjuCharacterButton.disabled = !hasSelectedCard && !manjuCharacterPrompt.value.trim();
+}
+
+function collectManjuCharacterCardPayload(existingId = "") {
+  const title = getCurrentManjuTitle();
+  const name = manjuCharacterName.value.trim();
+  const role = manjuCharacterRole.value.trim();
+  const prompt = manjuCharacterPrompt.value.trim();
+  return {
+    id: existingId || makeManjuCharacterCardId(title, name),
+    title,
+    name,
+    role,
+    prompt,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function applyManjuCharacterCard(card) {
+  manjuCharacterName.value = card.name || "";
+  manjuCharacterRole.value = card.role || "";
+  manjuCharacterPrompt.value = card.prompt || "";
+  updateManjuCharacterActions();
+}
+
+function saveCurrentManjuCharacterCard() {
+  const title = getCurrentManjuTitle();
+  const name = manjuCharacterName.value.trim();
+  const prompt = manjuCharacterPrompt.value.trim();
+  if (!name || !prompt) {
+    showMessage("先填写角色名和人设提示词卡，再保存角色。", true);
+    return;
+  }
+
+  const cards = readManjuCharacterCards();
+  const selectedId = manjuCharacterSelect.value;
+  const sameCharacter = cards.find((card) => card.title === title && card.name === name);
+  const targetId = selectedId || sameCharacter?.id || "";
+  const payload = collectManjuCharacterCardPayload(targetId);
+  const nextCards = [payload, ...cards.filter((card) => card.id !== payload.id)];
+  writeManjuCharacterCards(nextCards);
+  renderManjuCharacterCards(payload.id);
+  showMessage(`人设资料卡“${payload.name}”已保存到「${title}」。`, false);
+}
+
+function loadSelectedManjuCharacterCard() {
+  const card = readManjuCharacterCards().find((item) => item.id === manjuCharacterSelect.value);
+  if (!card) {
+    showMessage("先选择一个已保存的人设资料卡。", true);
+    return;
+  }
+  applyManjuCharacterCard(card);
+  showMessage(`已加载人设资料卡“${card.name || "未命名"}”。`, false);
+}
+
+function deleteSelectedManjuCharacterCard() {
+  const cards = readManjuCharacterCards();
+  const card = cards.find((item) => item.id === manjuCharacterSelect.value);
+  if (!card) {
+    showMessage("先选择一个已保存的人设资料卡。", true);
+    return;
+  }
+  if (!window.confirm(`确定删除人设资料卡“${card.name || "未命名"}”吗？`)) {
+    return;
+  }
+  writeManjuCharacterCards(cards.filter((item) => item.id !== card.id));
+  renderManjuCharacterCards("");
+  showMessage("人设资料卡已删除。", false);
+}
+
+function appendSelectedManjuCharacterToPack() {
+  const selectedCard = readManjuCharacterCards().find((item) => item.id === manjuCharacterSelect.value);
+  const draftCard = collectManjuCharacterCardPayload("");
+  const card = selectedCard || draftCard;
+  const line = formatManjuCharacterPromptLine(card);
+  if (!line) {
+    showMessage("先选择或填写一张人设资料卡。", true);
+    return;
+  }
+
+  const existing = manjuCharacterPack.value.trim();
+  if (existing.includes(line)) {
+    showMessage("这张人设资料卡已经在人设提示词包里了。", false);
+    return;
+  }
+
+  manjuCharacterPack.value = existing ? `${existing}\n${line}` : line;
+  updatePromptPreview();
+  showMessage(`已写入人设提示词包：${card.name || "未命名角色"}。`, false);
+}
+
+function formatManjuCharacterPromptLine(card) {
+  const name = String(card?.name || "").trim();
+  const prompt = String(card?.prompt || "").trim();
+  if (!name || !prompt) {
+    return "";
+  }
+  const role = String(card.role || "").trim();
+  return `${name}${role ? `（${role}）` : ""}：${prompt}`;
+}
+
+function applyManjuFormulaPreset() {
+  manjuFormula.value = MANJU_FORMULA_PRESETS[manjuFormulaPreset.value] || DEFAULT_MANJU_FORMULA;
+  updatePromptPreview();
+}
+
+function applyManjuGenerationDefaults() {
+  if (activeMode !== "manju") {
+    setWorkbenchMode("manju");
+  }
+  setModelInputValue("gpt-image-2");
+  sizeSelect.value = "2160x3840";
+  document.querySelector("#quality").value = "high";
+  document.querySelector("#count").value = "4";
+  document.querySelector("#background").value = "opaque";
+  updateSizeUi();
+  updatePromptPreview();
+  showMessage("已切到竖屏漫剧参数：gpt-image-2、9:16 4K、高质量、4 张候选。", false);
+}
+
+function getCurrentManjuTitle() {
+  return manjuTitle.value.trim() || "未命名漫剧";
+}
+
+function isValidManjuArchiveCategory(value) {
+  return MANJU_ARCHIVE_CATEGORIES.some((category) => category.value === value);
+}
+
+function getManjuArchiveCategoryLabel(value) {
+  return MANJU_ARCHIVE_CATEGORIES.find((category) => category.value === value)?.label || "分镜候选";
+}
+
+function normalizeManjuArchiveRecord(item, fallbackImageId = "") {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const imageId = String(item.imageId || fallbackImageId || "").trim();
+  if (!imageId) {
+    return null;
+  }
+  const category = isValidManjuArchiveCategory(item.category) ? item.category : DEFAULT_MANJU_ARCHIVE_CATEGORY;
+  const characters = Array.isArray(item.characters)
+    ? item.characters.map((name) => String(name || "").trim()).filter(Boolean).slice(0, 12)
+    : [];
+  return {
+    imageId,
+    title: String(item.title || "未命名漫剧").trim() || "未命名漫剧",
+    category,
+    note: String(item.note || "").trim().slice(0, 160),
+    shotNo: String(item.shotNo || "").trim().slice(0, 80),
+    sourceShotNo: String(item.sourceShotNo || "").trim().slice(0, 80),
+    scene: String(item.scene || "").trim().slice(0, 160),
+    queueId: String(item.queueId || "").trim().slice(0, 120),
+    continuityLock: normalizeManjuContinuityLock(item.continuityLock),
+    characterId: String(item.characterId || "").trim().slice(0, 120),
+    characterName: String(item.characterName || "").trim().slice(0, 120),
+    characters,
+    characterBindings: normalizeManjuCharacterBindings(item.characterBindings, characters),
+    variantId: String(item.variantId || "").trim().slice(0, 120),
+    variantName: String(item.variantName || "").trim().slice(0, 120),
+    url: String(item.url || ""),
+    batchId: String(item.batchId || ""),
+    createdAt: String(item.createdAt || ""),
+    updatedAt: String(item.updatedAt || ""),
+  };
+}
+
+function readManjuArchives() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MANJU_ARCHIVES_STORAGE_KEY) || "{}");
+    const records = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed || {}).map(([imageId, item]) => ({ ...item, imageId: item?.imageId || imageId }));
+    return records.reduce((acc, item) => {
+      const record = normalizeManjuArchiveRecord(item);
+      if (record) {
+        acc[record.imageId] = record;
+      }
+      return acc;
+    }, {});
+  } catch {
+    return {};
+  }
+}
+
+function writeManjuArchives(archives) {
+  const entries = Object.values(archives || {})
+    .map((item) => normalizeManjuArchiveRecord(item))
+    .filter(Boolean)
+    .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")))
+    .slice(0, 2000);
+  const nextArchives = entries.reduce((acc, item) => {
+    acc[item.imageId] = item;
+    return acc;
+  }, {});
+  localStorage.setItem(MANJU_ARCHIVES_STORAGE_KEY, JSON.stringify(nextArchives));
+}
+
+function makeManjuTitleFilterValue(title) {
+  return `title:${title}`;
+}
+
+function parseManjuTitleFilterValue(value) {
+  return String(value || "").startsWith("title:") ? String(value).slice(6) : "";
+}
+
+function renderManjuArchiveTitleOptions(archives) {
+  const previousValue = manjuArchiveTitleFilter.value || MANJU_ARCHIVE_ALL_VALUE;
+  const currentTitle = getCurrentManjuTitle();
+  const titles = Array.from(new Set([
+    currentTitle,
+    ...Object.values(archives).map((item) => item.title).filter(Boolean),
+  ])).sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+
+  manjuArchiveTitleFilter.innerHTML = "";
+  const allOption = document.createElement("option");
+  allOption.value = MANJU_ARCHIVE_ALL_VALUE;
+  allOption.textContent = "全部剧名";
+  manjuArchiveTitleFilter.append(allOption);
+
+  titles.forEach((title) => {
+    const option = document.createElement("option");
+    option.value = makeManjuTitleFilterValue(title);
+    option.textContent = title;
+    manjuArchiveTitleFilter.append(option);
+  });
+
+  const hasPrevious = Array.from(manjuArchiveTitleFilter.options).some((option) => option.value === previousValue);
+  manjuArchiveTitleFilter.value = hasPrevious ? previousValue : MANJU_ARCHIVE_ALL_VALUE;
+}
+
+function archiveRecordMatchesFilters(record, titleFilter, categoryFilter) {
+  if (!record) {
+    return false;
+  }
+  if (titleFilter && record.title !== titleFilter) {
+    return false;
+  }
+  if (categoryFilter !== MANJU_ARCHIVE_ALL_VALUE && record.category !== categoryFilter) {
+    return false;
+  }
+  return true;
+}
+
+function isManjuArchiveFilterActive() {
+  return (activeMode === "manju" || Boolean(activeShotQueue?.shots?.length))
+    && (manjuArchiveTitleFilter.value !== MANJU_ARCHIVE_ALL_VALUE
+      || manjuArchiveCategoryFilter.value !== MANJU_ARCHIVE_ALL_VALUE);
+}
+
+function filterManjuGalleryImages(images, archives = readManjuArchives()) {
+  if (!isManjuArchiveFilterActive()) {
+    return images;
+  }
+  const titleFilter = parseManjuTitleFilterValue(manjuArchiveTitleFilter.value);
+  const categoryFilter = manjuArchiveCategoryFilter.value || MANJU_ARCHIVE_ALL_VALUE;
+  return images.filter((image) => archiveRecordMatchesFilters(archives[image.id], titleFilter, categoryFilter));
+}
+
+function getManjuArchiveRecordsForTitle(title = getCurrentManjuTitle()) {
+  return Object.values(readManjuArchives())
+    .filter((item) => item.title === title)
+    .sort((a, b) => String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")));
+}
+
+function updateManjuArchiveToolbar() {
+  if (!manjuGalleryTools) {
+    return;
+  }
+
+  const archives = readManjuArchives();
+  const records = Object.values(archives);
+  const currentTitle = getCurrentManjuTitle();
+  const showManjuTools = activeMode === "manju" || Boolean(activeShotQueue?.shots?.length);
+  manjuGalleryTools.hidden = !showManjuTools;
+  manjuArchiveActiveTitle.textContent = currentTitle;
+  renderManjuArchiveTitleOptions(archives);
+
+  const titleFilter = parseManjuTitleFilterValue(manjuArchiveTitleFilter.value);
+  const categoryFilter = manjuArchiveCategoryFilter.value || MANJU_ARCHIVE_ALL_VALUE;
+  const currentTitleCount = records.filter((item) => item.title === currentTitle).length;
+  const filteredCount = records.filter((item) => archiveRecordMatchesFilters(item, titleFilter, categoryFilter)).length;
+  const filterActive = isManjuArchiveFilterActive();
+  manjuArchiveSummary.textContent = filterActive
+    ? `归档 ${records.length} 张 · 筛选 ${filteredCount} 张 · 当前页 ${galleryImages.length} 张`
+    : `归档 ${records.length} 张 · 本剧 ${currentTitleCount} 张`;
+  clearManjuArchiveFilterButton.disabled = !filterActive;
+  exportManjuArchiveButton.disabled = !showManjuTools || currentTitleCount === 0;
+  renderArchiveQuickPanel(archives);
+}
+
+function renderArchiveQuickPanel(archives = readManjuArchives()) {
+  if (!archiveQuickPanel || !archiveQuickGroups) {
+    return;
+  }
+  const title = getCurrentManjuTitle();
+  const records = Object.values(archives)
+    .filter((record) => record.title === title && record.url)
+    .sort((a, b) => String(b.updatedAt || b.createdAt || "").localeCompare(String(a.updatedAt || a.createdAt || "")));
+  const characterRecords = records
+    .filter((record) => ["character-profile", "turnaround", "detail", "expression"].includes(record.category))
+    .slice(0, 12);
+  const sceneRecords = records
+    .filter((record) => record.category === "scene")
+    .slice(0, 12);
+  const showPanel = activeMode === "manju"
+    || Boolean(activeShotQueue?.shots?.length)
+    || characterRecords.length > 0
+    || sceneRecords.length > 0;
+  archiveQuickPanel.hidden = !showPanel;
+  if (!showPanel) {
+    return;
+  }
+
+  archiveQuickGroups.innerHTML = "";
+  archiveQuickGroups.append(
+    createArchiveQuickGroup("角色", characterRecords, "还没有归档角色图。"),
+    createArchiveQuickGroup("场景", sceneRecords, "还没有归档场景图。"),
+  );
+}
+
+function createArchiveQuickGroup(title, records, emptyText) {
+  const group = document.createElement("div");
+  group.className = "archive-quick-group";
+  const head = document.createElement("div");
+  head.className = "archive-quick-group-head";
+  const strong = document.createElement("strong");
+  strong.textContent = title;
+  const count = document.createElement("span");
+  count.textContent = `${records.length} 张`;
+  head.append(strong, count);
+
+  const list = document.createElement("div");
+  list.className = "archive-quick-list";
+  if (!records.length) {
+    const empty = document.createElement("p");
+    empty.className = "archive-quick-empty";
+    empty.textContent = emptyText;
+    list.append(empty);
+  } else {
+    records.forEach((record) => {
+      list.append(createArchiveQuickItem(record));
+    });
+  }
+
+  group.append(head, list);
+  return group;
+}
+
+function createArchiveQuickItem(record) {
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "archive-quick-item";
+  item.title = [getManjuArchiveCategoryLabel(record.category), record.note, record.characterName, record.scene].filter(Boolean).join(" · ");
+  const img = document.createElement("img");
+  img.src = record.url;
+  img.alt = record.note || getManjuArchiveCategoryLabel(record.category);
+  const text = document.createElement("span");
+  text.textContent = clipClientText(record.note || record.characterName || record.scene || record.shotNo || record.imageId, 30);
+  item.append(img, text);
+  item.addEventListener("click", () => addArchiveRecordReference(record));
+  return item;
+}
+
+function addArchiveRecordReference(record) {
+  if (!record?.url) {
+    showMessage("这条归档没有可用图片地址。", true);
+    return;
+  }
+  referenceImages = mergeReferencePayloads(referenceImages, [{
+    id: `archive-ref-${record.imageId}`,
+    name: [getManjuArchiveCategoryLabel(record.category), record.note || record.characterName || record.scene || record.imageId].filter(Boolean).join(" · "),
+    url: record.url,
+    thumb: record.url,
+    source: "manju-archive-quick-reference",
+  }]).slice(0, 16);
+  renderReferenceImages();
+  showMessage("已加入参考图。", false);
+}
+
+function clipClientText(value, maxLength = 36) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text || text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(1, maxLength - 1))}…`;
+}
+
+async function archiveManjuImage(image, category, note = "") {
+  if (!image?.id) {
+    showMessage("这张图没有可归档的本地记录。", true);
+    return;
+  }
+
+  const nextCategory = isValidManjuArchiveCategory(category) ? category : DEFAULT_MANJU_ARCHIVE_CATEGORY;
+  const archives = readManjuArchives();
+  const previous = archives[image.id] || {};
+  const requestContext = normalizeManjuGenerationContext(image.request?.manjuContext || image.params?.manjuContext);
+  archives[image.id] = {
+    imageId: image.id,
+    title: requestContext?.title || getCurrentManjuTitle(),
+    category: nextCategory,
+    note: String(note || "").trim(),
+    shotNo: previous.shotNo || requestContext?.shotNo || "",
+    sourceShotNo: previous.sourceShotNo || requestContext?.sourceShotNo || "",
+    scene: previous.scene || requestContext?.scene || "",
+    queueId: previous.queueId || requestContext?.queueId || "",
+    continuityLock: previous.continuityLock || requestContext?.continuityLock || null,
+    characterId: previous.characterId || requestContext?.characterId || "",
+    characterName: previous.characterName || requestContext?.characterName || "",
+    characters: previous.characters?.length ? previous.characters : requestContext?.characters || [],
+    characterBindings: previous.characterBindings?.length ? previous.characterBindings : requestContext?.characterBindings || [],
+    variantId: previous.variantId || requestContext?.variantId || "",
+    variantName: previous.variantName || requestContext?.variantName || "",
+    url: image.url || "",
+    batchId: image.batchId || "",
+    createdAt: image.createdAt || previous.createdAt || "",
+    updatedAt: new Date().toISOString(),
+  };
+  writeManjuArchives(archives);
+  updateManjuArchiveToolbar();
+  await loadImages();
+  showMessage(`已归档到「${archives[image.id].title} / ${getManjuArchiveCategoryLabel(nextCategory)}」。`, false);
+}
+
+function archiveDerivedManjuImages(sourceImage, generatedImages, actionLabel, preferredCategory = "") {
+  if (!sourceImage?.id || !Array.isArray(generatedImages) || generatedImages.length === 0) {
+    return false;
+  }
+
+  const archives = readManjuArchives();
+  const source = archives[sourceImage.id];
+  if (!source) {
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  const category = isValidManjuArchiveCategory(preferredCategory) ? preferredCategory : source.category;
+  let archivedCount = 0;
+  generatedImages.forEach((image, index) => {
+    if (!image?.id) {
+      return;
+    }
+    archives[image.id] = {
+      imageId: image.id,
+      title: source.title || getCurrentManjuTitle(),
+      category,
+      note: buildDerivedManjuArchiveNote(source, actionLabel, index, generatedImages.length),
+      shotNo: source.shotNo || "",
+      sourceShotNo: source.sourceShotNo || "",
+      scene: source.scene || "",
+      queueId: source.queueId || "",
+      continuityLock: source.continuityLock || null,
+      characterId: source.characterId || "",
+      characterName: source.characterName || "",
+      characters: source.characters || [],
+      characterBindings: source.characterBindings || [],
+      variantId: source.variantId || "",
+      variantName: source.variantName || "",
+      url: image.url || "",
+      batchId: image.batchId || "",
+      createdAt: image.createdAt || now,
+      updatedAt: now,
+    };
+    archivedCount += 1;
+  });
+
+  if (archivedCount === 0) {
+    return false;
+  }
+  writeManjuArchives(archives);
+  updateManjuArchiveToolbar();
+  return true;
+}
+
+function buildDerivedManjuArchiveNote(source, actionLabel, index, total) {
+  const suffix = total > 1 ? `${actionLabel}${index + 1}` : actionLabel;
+  return [source.note || source.shotNo || "", suffix].filter(Boolean).join(" · ").slice(0, 160);
+}
+
+function getDerivedManjuArchiveCategory(image, action) {
+  const record = readManjuArchives()[image?.id];
+  if (!record) {
+    return "";
+  }
+  if (action === "upscale") {
+    return record.category;
+  }
+  return ["shot-candidate", "shot-final", "discarded"].includes(record.category)
+    ? "shot-candidate"
+    : record.category;
+}
+
+async function removeManjuImageArchive(image) {
+  if (!image?.id) {
+    return;
+  }
+  const archives = readManjuArchives();
+  delete archives[image.id];
+  writeManjuArchives(archives);
+  updateManjuArchiveToolbar();
+  await loadImages();
+  showMessage("已取消这张图的漫剧归档。", false);
+}
+
+function pruneManjuArchives(imageIds) {
+  const ids = new Set((imageIds || []).filter(Boolean));
+  if (ids.size === 0) {
+    return;
+  }
+  const archives = readManjuArchives();
+  let changed = false;
+  ids.forEach((id) => {
+    if (archives[id]) {
+      delete archives[id];
+      changed = true;
+    }
+  });
+  if (changed) {
+    writeManjuArchives(archives);
+    updateManjuArchiveToolbar();
+  }
+}
+
+async function exportCurrentManjuArchive() {
+  const title = getCurrentManjuTitle();
+  const archives = getManjuArchiveRecordsForTitle(title);
+  if (archives.length === 0) {
+    showMessage("先把本剧图片归档后，再导出图集包。", true);
+    return;
+  }
+
+  const originalText = exportManjuArchiveButton.textContent;
+  exportManjuArchiveButton.disabled = true;
+  exportManjuArchiveButton.textContent = "导出中";
+
+  try {
+    const pack = {
+      ...collectManjuPackPayload(manjuPackSelect.value || ""),
+      title,
+      activeFormulaPreset: manjuFormulaPreset.value,
+    };
+    const result = await fetchJson("/api/manju/archive/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title,
+        pack: {
+          ...pack,
+          characters: getManjuCharacterCardsForTitle(title),
+        },
+        archives,
+        categories: MANJU_ARCHIVE_CATEGORIES,
+      }),
+    }, 30000);
+
+    const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : Number(result.skipped || 0);
+    showMessage(`已导出「${title}」图集：复制 ${result.copied || 0} 张，跳过 ${skippedCount} 张。目录：${result.exportDir}`, skippedCount > 0);
+  } catch (error) {
+    showMessage(normalizeFrontendError(error, "导出漫剧图集失败。"), true);
+  } finally {
+    exportManjuArchiveButton.textContent = originalText;
+    updateManjuArchiveToolbar();
+  }
 }
 
 function getAllStylePresets() {
@@ -588,7 +2699,7 @@ async function loadConfig() {
   try {
     const config = await fetchJson("/api/config", {}, 5000);
     if (config.defaultModel) {
-      modelSelect.value = config.defaultModel;
+      setModelInputValue(config.defaultModel);
     }
     statusPill.textContent = config.hasApiKey ? "API Key 已配置" : "缺少 API Key";
     statusPill.classList.toggle("ready", config.hasApiKey);
@@ -608,8 +2719,10 @@ async function loadApiSettings() {
     }
     renderProfiles();
     fillAuxiliaryForm(apiSettings.auxiliary);
+    renderAuxiliaryProfiles();
     renderStylePresets();
     renderSavedPrompts();
+    renderRecentPrompts();
     showApiMessage("配置已加载。", false);
   } catch (error) {
     showApiMessage(normalizeFrontendError(error, "读取 API 配置失败。"), true);
@@ -617,16 +2730,32 @@ async function loadApiSettings() {
 }
 
 function renderProfiles() {
-  profileSelect.innerHTML = "";
-  apiSettings.profiles.forEach((profile) => {
+  const activeId = apiSettings.activeProfileId || apiSettings.profiles[0]?.id || "";
+  renderProfileOptions(profileSelect, apiSettings.profiles);
+  renderProfileOptions(apiProfileManagerSelect, apiSettings.profiles);
+  profileSelect.value = activeId;
+  apiProfileManagerSelect.value = activeId;
+  fillApiForm(getManagedProfile());
+  updateProfileActions();
+}
+
+function renderAuxiliaryProfiles() {
+  const profiles = apiSettings.auxiliaryProfiles || [];
+  const activeId = apiSettings.activeAuxiliaryProfileId || apiSettings.auxiliary?.id || profiles[0]?.id || "";
+  renderProfileOptions(auxProfileManagerSelect, profiles);
+  auxProfileManagerSelect.value = activeId;
+  fillAuxiliaryForm(getManagedAuxiliaryProfile() || apiSettings.auxiliary);
+  updateAuxiliaryProfileActions();
+}
+
+function renderProfileOptions(select, profiles) {
+  select.innerHTML = "";
+  profiles.forEach((profile) => {
     const option = document.createElement("option");
     option.value = profile.id;
     option.textContent = profile.name || profile.id;
-    profileSelect.append(option);
+    select.append(option);
   });
-
-  profileSelect.value = apiSettings.activeProfileId || apiSettings.profiles[0]?.id || "";
-  fillApiForm(getSelectedProfile());
 }
 
 function fillApiForm(profile) {
@@ -635,6 +2764,9 @@ function fillApiForm(profile) {
     apiBaseUrl.value = "https://api.openai.com";
     apiImageModel.value = "gpt-image-2";
     apiEndpointMode.value = "images";
+    syncModelForEndpointMode();
+    syncImageModelSelect();
+    syncMainModelWithApiDefault();
     apiKey.value = "";
     apiKey.placeholder = "粘贴 API Key";
     return;
@@ -644,13 +2776,55 @@ function fillApiForm(profile) {
   apiBaseUrl.value = profile.baseUrl || "";
   apiImageModel.value = profile.imageModel || "gpt-image-2";
   apiEndpointMode.value = profile.endpointMode || "images";
+  syncModelForEndpointMode();
+  syncImageModelSelect();
+  syncMainModelWithApiDefault();
   apiKey.value = "";
   apiKey.placeholder = profile.hasApiKey ? `已保存 ${profile.apiKeyMask}，留空则保留` : "粘贴 API Key";
-  modelSelect.value = profile.imageModel || "gpt-image-2";
+}
+
+function syncModelForEndpointMode() {
+  syncImageModelSelect();
+  syncMainModelWithApiDefault();
+}
+
+function syncMainModelWithApiDefault() {
+  const model = apiImageModel.value.trim();
+  if (model) {
+    setModelInputValue(model);
+  }
+}
+
+function setModelInputValue(model) {
+  modelSelect.value = model || "gpt-image-2";
   updateSizeUi();
 }
 
+function renderImageModelOptions(models = []) {
+  apiImageModelSelect.innerHTML = "";
+  const manualOption = document.createElement("option");
+  manualOption.value = "";
+  manualOption.textContent = models.length > 0 ? "手动输入 / 不使用列表" : "先拉取模型";
+  apiImageModelSelect.append(manualOption);
+
+  models.forEach((model) => {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent = model;
+    apiImageModelSelect.append(option);
+  });
+  apiImageModelSelect.disabled = models.length === 0;
+  syncImageModelSelect();
+}
+
+function syncImageModelSelect() {
+  const current = apiImageModel.value.trim();
+  const values = Array.from(apiImageModelSelect.options).map((option) => option.value);
+  apiImageModelSelect.value = values.includes(current) ? current : "";
+}
+
 function fillAuxiliaryForm(auxiliary = {}) {
+  auxProfileName.value = auxiliary.name || "辅助 API";
   auxUseActiveProfile.checked = auxiliary.useActiveProfile !== false;
   auxModel.value = auxiliary.model || "gpt-4o-mini";
   syncAuxiliaryModelSelect();
@@ -691,6 +2865,60 @@ function updateAuxiliaryUi() {
   auxApiKey.placeholder = isReusing ? "正在复用当前生图 API Key" : (apiSettings.auxiliary?.hasApiKey ? `已保存 ${apiSettings.auxiliary.apiKeyMask}，留空则保留` : "粘贴辅助 API Key");
 }
 
+function renderPromptLexicon() {
+  lexiconCategorySelect.innerHTML = "";
+  promptLexiconGroups.forEach((group) => {
+    const option = document.createElement("option");
+    option.value = group.id;
+    option.textContent = group.label;
+    lexiconCategorySelect.append(option);
+  });
+  renderPromptLexiconItems();
+}
+
+function renderPromptLexiconItems() {
+  const group = promptLexiconGroups.find((item) => item.id === lexiconCategorySelect.value) || promptLexiconGroups[0];
+  lexiconChipList.innerHTML = "";
+  (group?.items || []).forEach((item) => {
+    const chip = document.createElement("div");
+    chip.className = "lexicon-chip";
+
+    const insertButton = document.createElement("button");
+    insertButton.type = "button";
+    insertButton.textContent = item.label;
+    insertButton.title = item.text;
+    insertButton.addEventListener("click", () => insertPromptText(item.text));
+
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.className = "lexicon-save";
+    saveButton.textContent = "☆";
+    saveButton.title = "收藏到提示词";
+    saveButton.addEventListener("click", () => saveSavedPrompt({
+      name: `${group.label} · ${item.label}`,
+      text: item.text,
+      mode: "lexicon",
+      source: `lexicon:${group.id}`,
+    }));
+
+    chip.append(insertButton, saveButton);
+    lexiconChipList.append(chip);
+  });
+}
+
+function insertPromptText(text) {
+  const cleanText = String(text || "").trim();
+  if (!cleanText) {
+    return;
+  }
+  promptInput.value = promptInput.value.trim()
+    ? `${promptInput.value.trim()}，${cleanText}`
+    : cleanText;
+  promptInput.focus();
+  updatePromptPreview();
+  showMessage("已插入常用提示词。", false);
+}
+
 function renderSavedPrompts() {
   const prompts = apiSettings.savedPrompts || [];
   savedPromptList.innerHTML = "";
@@ -705,40 +2933,116 @@ function renderSavedPrompts() {
   }
 
   prompts.forEach((item) => {
-    const card = document.createElement("article");
-    card.className = "saved-card";
-
-    const title = document.createElement("strong");
-    title.textContent = item.name || "未命名提示词";
-
-    const preview = document.createElement("p");
-    preview.textContent = item.text || "";
-
-    const actions = document.createElement("div");
-    const useButton = document.createElement("button");
-    useButton.type = "button";
-    useButton.textContent = "使用";
-    useButton.addEventListener("click", () => useSavedPrompt(item, false));
-
-    const appendButton = document.createElement("button");
-    appendButton.type = "button";
-    appendButton.textContent = "追加";
-    appendButton.addEventListener("click", () => useSavedPrompt(item, true));
-
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "danger-action";
-    deleteButton.textContent = "删除";
-    deleteButton.addEventListener("click", () => deleteSavedPrompt(item.id));
-
-    actions.append(useButton, appendButton, deleteButton);
-    card.append(title, preview, actions);
-    savedPromptList.append(card);
+    savedPromptList.append(renderPromptCard(item, {
+      deleteLabel: "删除",
+      onDelete: () => deleteSavedPrompt(item.id),
+    }));
   });
+}
+
+function renderRecentPrompts() {
+  const prompts = apiSettings.recentPrompts || [];
+  recentPromptList.innerHTML = "";
+  recentPromptCount.textContent = String(prompts.length);
+
+  if (prompts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "saved-empty";
+    empty.textContent = "还没有最近使用记录。";
+    recentPromptList.append(empty);
+    return;
+  }
+
+  prompts.forEach((item) => {
+    recentPromptList.append(renderPromptCard(item, {
+      deleteLabel: "移除",
+      onDelete: () => deleteRecentPrompt(item.id),
+      includeSave: true,
+    }));
+  });
+}
+
+function renderPromptCard(item, options = {}) {
+  const card = document.createElement("article");
+  card.className = "saved-card";
+
+  const title = document.createElement("strong");
+  title.textContent = item.name || "未命名提示词";
+
+  const preview = document.createElement("p");
+  preview.textContent = item.text || "";
+
+  const actions = document.createElement("div");
+  const useButton = document.createElement("button");
+  useButton.type = "button";
+  useButton.textContent = "使用";
+  useButton.addEventListener("click", () => useSavedPrompt(item, false));
+
+  const appendButton = document.createElement("button");
+  appendButton.type = "button";
+  appendButton.textContent = "追加";
+  appendButton.addEventListener("click", () => useSavedPrompt(item, true));
+
+  actions.append(useButton, appendButton);
+  if (options.includeSave) {
+    const saveButton = document.createElement("button");
+    saveButton.type = "button";
+    saveButton.textContent = "收藏";
+    saveButton.addEventListener("click", () => saveSavedPrompt({
+      name: item.name || "最近提示词",
+      text: item.text,
+      mode: item.mode || "recent",
+      source: "recent-to-favorite",
+    }));
+    actions.append(saveButton);
+  }
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "danger-action";
+  deleteButton.textContent = options.deleteLabel || "删除";
+  deleteButton.addEventListener("click", options.onDelete || (() => deleteSavedPrompt(item.id)));
+
+  actions.append(deleteButton);
+  card.append(title, preview, actions);
+  return card;
 }
 
 function getSelectedProfile() {
   return apiSettings.profiles.find((profile) => profile.id === profileSelect.value) || apiSettings.profiles[0];
+}
+
+function getManagedProfile() {
+  return apiSettings.profiles.find((profile) => profile.id === apiProfileManagerSelect.value);
+}
+
+function getManagedAuxiliaryProfile() {
+  return (apiSettings.auxiliaryProfiles || []).find((profile) => profile.id === auxProfileManagerSelect.value);
+}
+
+function createNewAuxiliaryProfileDraft() {
+  const id = `aux-${Date.now()}`;
+  const option = document.createElement("option");
+  option.value = id;
+  option.textContent = "新辅助配置";
+  auxProfileManagerSelect.append(option);
+  auxProfileManagerSelect.value = id;
+  auxProfileName.value = "新辅助配置";
+  auxUseActiveProfile.checked = false;
+  auxBaseUrl.value = "https://api.openai.com";
+  auxApiKey.value = "";
+  auxApiKey.placeholder = "粘贴辅助 API Key";
+  auxModel.value = "gpt-4o-mini";
+  renderAuxiliaryModelOptions([]);
+  updateAuxiliaryUi();
+  updateAuxiliaryProfileActions();
+  showApiMessage("填写后保存即可作为新的辅助 API 配置使用。", false);
+}
+
+function updateAuxiliaryProfileActions() {
+  const profiles = apiSettings.auxiliaryProfiles || [];
+  const managedProfile = getManagedAuxiliaryProfile();
+  deleteAuxProfileButton.disabled = profiles.length <= 1 && Boolean(managedProfile);
 }
 
 function createNewProfileDraft() {
@@ -746,15 +3050,27 @@ function createNewProfileDraft() {
   const option = document.createElement("option");
   option.value = id;
   option.textContent = "新配置";
-  profileSelect.append(option);
-  profileSelect.value = id;
+  apiProfileManagerSelect.append(option);
+  apiProfileManagerSelect.value = id;
   apiProfileName.value = "新配置";
   apiBaseUrl.value = "https://api.openai.com";
   apiImageModel.value = "gpt-image-2";
   apiEndpointMode.value = "images";
   apiKey.value = "";
   apiKey.placeholder = "粘贴 API Key";
+  updateProfileActions();
   showApiMessage("填写后保存并启用。Kirby 这类中转如果 Images API 不通，可以把“生图接口”切到聊天兼容。", false);
+}
+
+function syncManagerProfileSelection() {
+  fillApiForm(getManagedProfile());
+  updateProfileActions();
+}
+
+function updateProfileActions() {
+  const profiles = apiSettings.profiles || [];
+  const managedProfile = getManagedProfile();
+  deleteProfileButton.disabled = profiles.length <= 1 && Boolean(managedProfile);
 }
 
 async function activateSelectedProfile() {
@@ -777,6 +3093,7 @@ async function activateSelectedProfile() {
         setActive: true,
       }),
     });
+    renderProfiles();
     showApiMessage(`已启用：${profile.name}`, false);
     await loadConfig();
   } catch (error) {
@@ -800,12 +3117,51 @@ async function saveApiSettings() {
     });
     renderProfiles();
     fillAuxiliaryForm(apiSettings.auxiliary);
+    renderAuxiliaryProfiles();
     await loadConfig();
     showApiMessage("已保存并启用。", false);
   } catch (error) {
     showApiMessage(normalizeFrontendError(error, "保存 API 配置失败。"), true);
   } finally {
     saveApiButton.disabled = false;
+  }
+}
+
+async function deleteActiveProfile() {
+  const profile = getManagedProfile();
+  if (!profile) {
+    const selectedOption = apiProfileManagerSelect.selectedOptions[0];
+    selectedOption?.remove();
+    apiProfileManagerSelect.value = apiSettings.activeProfileId || apiSettings.profiles[0]?.id || "";
+    fillApiForm(getManagedProfile());
+    updateProfileActions();
+    showApiMessage("未保存的新配置已移除。", false);
+    return;
+  }
+  if ((apiSettings.profiles || []).length <= 1) {
+    showApiMessage("至少需要保留一个 API 配置。", true);
+    return;
+  }
+  if (!window.confirm(`确定删除 API 配置“${profile.name || profile.id}”吗？`)) {
+    return;
+  }
+
+  try {
+    deleteProfileButton.disabled = true;
+    apiSettings = await fetchJson("/api/settings/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id }),
+    });
+    renderProfiles();
+    fillAuxiliaryForm(apiSettings.auxiliary);
+    renderAuxiliaryProfiles();
+    await loadConfig();
+    showApiMessage("配置已删除。", false);
+  } catch (error) {
+    showApiMessage(normalizeFrontendError(error, "删除 API 配置失败。"), true);
+  } finally {
+    updateProfileActions();
   }
 }
 
@@ -854,6 +3210,98 @@ async function testAuxiliaryConnection() {
   }
 }
 
+async function activateSelectedAuxiliaryProfile() {
+  const profile = getManagedAuxiliaryProfile();
+  fillAuxiliaryForm(profile || {});
+  updateAuxiliaryProfileActions();
+  if (!profile) {
+    return;
+  }
+
+  try {
+    apiSettings = await fetchJson("/api/auxiliary-settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId: profile.id,
+        name: profile.name,
+        useActiveProfile: profile.useActiveProfile,
+        baseUrl: profile.baseUrl,
+        model: profile.model,
+        setActive: true,
+      }),
+    });
+    renderAuxiliaryProfiles();
+    showApiMessage(`已启用辅助配置：${profile.name || profile.model}`, false);
+  } catch (error) {
+    showApiMessage(normalizeFrontendError(error, "启用辅助 API 配置失败。"), true);
+  }
+}
+
+async function deleteActiveAuxiliaryProfile() {
+  const profile = getManagedAuxiliaryProfile();
+  if (!profile) {
+    const selectedOption = auxProfileManagerSelect.selectedOptions[0];
+    selectedOption?.remove();
+    auxProfileManagerSelect.value = apiSettings.activeAuxiliaryProfileId || apiSettings.auxiliaryProfiles?.[0]?.id || "";
+    fillAuxiliaryForm(getManagedAuxiliaryProfile() || apiSettings.auxiliary);
+    updateAuxiliaryProfileActions();
+    showApiMessage("未保存的新辅助配置已移除。", false);
+    return;
+  }
+  if ((apiSettings.auxiliaryProfiles || []).length <= 1) {
+    showApiMessage("至少需要保留一个辅助 API 配置。", true);
+    return;
+  }
+  if (!window.confirm(`确定删除辅助 API 配置“${profile.name || profile.id}”吗？`)) {
+    return;
+  }
+
+  try {
+    deleteAuxProfileButton.disabled = true;
+    apiSettings = await fetchJson("/api/auxiliary-settings/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id }),
+    });
+    renderAuxiliaryProfiles();
+    showApiMessage("辅助 API 配置已删除。", false);
+  } catch (error) {
+    showApiMessage(normalizeFrontendError(error, "删除辅助 API 配置失败。"), true);
+  } finally {
+    updateAuxiliaryProfileActions();
+  }
+}
+
+async function loadImageModels() {
+  try {
+    loadImageModelsButton.disabled = true;
+    showApiMessage("正在拉取生图 API 模型列表。", false);
+    const result = await fetchJson("/api/image-models", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectApiSettingsPayload()),
+    }, 40000);
+
+    if (!result.ok) {
+      showApiMessage(`拉取模型失败：${result.error || "未知错误"}\nEndpoint: ${result.endpoint || ""}`, true);
+      return;
+    }
+
+    renderImageModelOptions(result.models || []);
+    if (!apiImageModel.value.trim() && result.models?.length) {
+      apiImageModel.value = result.models[0];
+      syncImageModelSelect();
+      syncMainModelWithApiDefault();
+    }
+    showApiMessage(`已拉取 ${result.modelCount || 0} 个生图模型。可在“已拉取模型”下拉框选择，或继续手动输入。\nEndpoint: ${result.endpoint}`, false);
+  } catch (error) {
+    showApiMessage(normalizeFrontendError(error, "拉取生图模型失败。"), true);
+  } finally {
+    loadImageModelsButton.disabled = false;
+  }
+}
+
 async function loadAuxiliaryModels() {
   try {
     loadAuxModelsButton.disabled = true;
@@ -890,8 +3338,8 @@ async function saveAuxiliarySettings() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(collectAuxiliaryPayload()),
     });
-    fillAuxiliaryForm(apiSettings.auxiliary);
-    showApiMessage(`辅助 API 已保存：${apiSettings.auxiliary?.model || auxModel.value}`, false);
+    renderAuxiliaryProfiles();
+    showApiMessage(`辅助 API 已保存：${apiSettings.auxiliary?.name || apiSettings.auxiliary?.model || auxModel.value}`, false);
   } catch (error) {
     showApiMessage(normalizeFrontendError(error, "保存辅助 API 失败。"), true);
   } finally {
@@ -901,11 +3349,11 @@ async function saveAuxiliarySettings() {
 
 function collectApiSettingsPayload() {
   return {
-    profileId: profileSelect.value || `profile-${Date.now()}`,
+    profileId: apiProfileManagerSelect.value || `profile-${Date.now()}`,
     name: apiProfileName.value.trim() || "API Profile",
     baseUrl: apiBaseUrl.value.trim(),
     apiKey: apiKey.value.trim(),
-    imageModel: apiImageModel.value,
+    imageModel: apiImageModel.value.trim() || "gpt-image-2",
     endpointMode: apiEndpointMode.value,
     setActive: true,
     auxiliary: collectAuxiliaryPayload(),
@@ -914,10 +3362,13 @@ function collectApiSettingsPayload() {
 
 function collectAuxiliaryPayload() {
   return {
+    profileId: auxProfileManagerSelect.value || `aux-${Date.now()}`,
+    name: auxProfileName.value.trim() || "辅助 API",
     useActiveProfile: auxUseActiveProfile.checked,
     baseUrl: auxBaseUrl.value.trim(),
     apiKey: auxApiKey.value.trim(),
     model: auxModel.value.trim() || "gpt-4o-mini",
+    setActive: true,
   };
 }
 
@@ -1116,21 +3567,39 @@ async function submitGeneration(event) {
   await runGeneration(payload, "正在生成，4K 或近 4K 图通常会更慢，耐心等它出片。");
 }
 
-async function runGeneration(payload, statusText) {
+async function runGeneration(payload, statusText, options = {}) {
   setBusy(true);
   showMessage(statusText, false);
+  const requestPayload = { ...payload };
+  const shouldAutoArchiveManju = options.autoArchiveManju !== false
+    && requestPayload.autoArchiveManju !== false;
+  delete requestPayload.autoArchiveManju;
 
   try {
     const result = await fetchJson("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(requestPayload),
     }, 620000);
+    const manjuContext = shouldAutoArchiveManju
+      ? normalizeManjuGenerationContext(requestPayload.manjuContext || activeManjuGenerationContext)
+      : null;
+    if (manjuContext) {
+      archiveGeneratedManjuImages(result.images, manjuContext);
+    }
+    await rememberRecentPrompt({
+      name: makePromptName(activeMode === "manju" ? promptInput.value.trim() : requestPayload.prompt),
+      text: requestPayload.prompt,
+      mode: activeMode,
+      source: "generation",
+    });
     galleryPage = 1;
     await loadImages();
     showMessage(`已生成 ${result.images.length} 张，批次 ${result.batchId}。`, false);
+    return result;
   } catch (error) {
     showMessage(normalizeFrontendError(error, "生成失败。"), true);
+    return null;
   } finally {
     setBusy(false);
   }
@@ -1144,20 +3613,29 @@ async function loadImages() {
     });
     const data = await fetchJson(`/api/images?${params}`, {}, 8000);
     gallery.innerHTML = "";
-    galleryImages = data.images || [];
+    const pageImages = data.images || [];
+    const archives = readManjuArchives();
+    galleryImages = filterManjuGalleryImages(pageImages, archives);
     galleryTotal = Number(data.total) || 0;
     galleryPage = Number(data.page) || 1;
     galleryPageSizeValue = Number(data.pageSize) || galleryPageSizeValue;
     galleryTotalPages = Number(data.totalPages) || 1;
 
-    if (!galleryImages.length) {
+    if (!pageImages.length) {
       updateGalleryControls();
       showMessage("还没有生成记录。", false);
       return;
     }
+    if (!galleryImages.length) {
+      updateGalleryControls();
+      showMessage("当前漫剧归档筛选在这一页没有匹配图片。", false);
+      return;
+    }
     galleryImages.forEach((image) => renderImage(image, gallery));
     updateGalleryControls();
-    showMessage(`已加载第 ${galleryPage} 页，共 ${galleryTotal} 张历史图片。`, false);
+    showMessage(isManjuArchiveFilterActive()
+      ? `已按漫剧归档筛选当前页，显示 ${galleryImages.length} / ${pageImages.length} 张。`
+      : `已加载第 ${galleryPage} 页，共 ${galleryTotal} 张历史图片。`, false);
   } catch (error) {
     showMessage(normalizeFrontendError(error, "读取历史图片失败。"), true);
   }
@@ -1182,6 +3660,7 @@ function updateGalleryControls() {
   gallery.querySelectorAll(".thumb-select input").forEach((checkbox) => {
     checkbox.checked = selectedImageIds.has(checkbox.value);
   });
+  updateManjuArchiveToolbar();
 }
 
 function setCurrentPageSelection(shouldSelect) {
@@ -1229,6 +3708,7 @@ async function deleteImagesByIds(ids) {
       body: JSON.stringify({ ids }),
     }, 12000);
     (result.deleted || []).forEach((id) => selectedImageIds.delete(id));
+    pruneManjuArchives(result.deleted || []);
     if (previewModal.classList.contains("open") && ids.includes(galleryImages[previewIndex]?.id)) {
       closePreview();
     }
@@ -1244,13 +3724,14 @@ async function deleteImagesByIds(ids) {
 }
 
 function collectPayload() {
-  const model = modelSelect.value;
+  const model = modelSelect.value.trim() || "gpt-image-2";
+  modelSelect.value = model;
   const size = resolveSize(model);
   const selectedStyle = getAllStylePresets()[activeStyle];
   const styleReferences = selectedStyle?.saved && selectedStyle.strength === "high"
     ? selectedStyle.references || []
     : [];
-  return {
+  const payload = {
     prompt: composePrompt(),
     negativePrompt: negativePromptInput.value.trim(),
     model,
@@ -1272,6 +3753,11 @@ function collectPayload() {
       source: "saved-style-reference",
     }))),
   };
+  const manjuContext = normalizeManjuGenerationContext(activeManjuGenerationContext);
+  if (manjuContext) {
+    payload.manjuContext = manjuContext;
+  }
+  return payload;
 }
 
 function resolveSize(model) {
@@ -1279,6 +3765,10 @@ function resolveSize(model) {
   const size = selected === "custom"
     ? `${Number(customWidth.value)}x${Number(customHeight.value)}`
     : selected;
+
+  if (!model.startsWith("gpt-image-")) {
+    return LEGACY_SIZES.has(size) ? size : "auto";
+  }
 
   if (model !== "gpt-image-2") {
     if (!LEGACY_SIZES.has(size)) {
@@ -1326,6 +3816,12 @@ function updateSizeUi() {
     : selected;
 
   try {
+    if (!model.startsWith("gpt-image-")) {
+      sizeHint.textContent = "Responses API 模型会通过图像工具生成；尺寸建议使用 auto 或基础比例。";
+      sizeHint.classList.remove("invalid");
+      return;
+    }
+
     if (model !== "gpt-image-2" && !LEGACY_SIZES.has(size)) {
       throw new Error("4K 和自定义尺寸需要 gpt-image-2。");
     }
@@ -1348,7 +3844,9 @@ function updateSizeUi() {
 }
 
 function composePrompt() {
-  const userText = promptInput.value.trim();
+  const userText = activeMode === "manju"
+    ? buildManjuPrompt()
+    : promptInput.value.trim();
   const purpose = purposePresets[activePurpose] || purposePresets.free;
   const style = getAllStylePresets()[activeStyle] || getAllStylePresets().none;
   const lines = [userText];
@@ -1372,6 +3870,25 @@ function composePrompt() {
   }
 
   return lines.join("\n");
+}
+
+function buildManjuPrompt() {
+  const values = {
+    "剧名": manjuTitle.value.trim() || "未命名漫剧",
+    "全局画风包": manjuStylePack.value.trim() || "竖屏漫剧关键帧，统一画风，角色一致，电影感构图。",
+    "人设提示词包": manjuCharacterPack.value.trim() || "沿用已绑定角色人设，保持脸型、发型、服装核心设计一致。",
+    "分镜描述": promptInput.value.trim() || "当前分镜画面待填写。",
+    "场景": manjuScene.value.trim() || "未指定场景",
+    "场景包": manjuScenePack.value.trim() || "固定场景未填写，按当前分镜建立空间结构。",
+    "景别": manjuShotSize.value,
+    "机位": manjuCamera.value,
+    "情绪": manjuEmotion.value.trim() || "情绪明确，符合剧情张力",
+    "动作": manjuAction.value.trim() || "角色动作清晰，姿态自然",
+    "参考策略": manjuReferenceStrategy.value,
+    "对白": manjuDialogue.value.trim() || "无对白，只保留画面叙事",
+  };
+  const formula = manjuFormula.value.trim() || DEFAULT_MANJU_FORMULA;
+  return formula.replace(/\{([^{}]+)\}/g, (match, key) => values[key.trim()] ?? match);
 }
 
 function updatePromptPreview() {
@@ -1443,14 +3960,19 @@ function renderImage(image, container, prepend = false) {
   rerollButton.textContent = "重Roll";
   rerollButton.addEventListener("click", () => rerollImage(image));
 
+  const savePromptFromImageButton = document.createElement("button");
+  savePromptFromImageButton.type = "button";
+  savePromptFromImageButton.textContent = "存提示词";
+  savePromptFromImageButton.addEventListener("click", () => savePromptFromImage(image));
+
   const deleteButton = document.createElement("button");
   deleteButton.type = "button";
   deleteButton.className = "danger-action";
   deleteButton.textContent = "删除";
   deleteButton.addEventListener("click", () => deleteSingleImage(image));
 
-  actions.append(openLink, downloadLink, referenceButton, rerollButton, deleteButton);
-  info.append(title, renderImageMeta(image), actions, renderPostActions(image));
+  actions.append(openLink, downloadLink, referenceButton, rerollButton, savePromptFromImageButton, deleteButton);
+  info.append(title, renderImageMeta(image), actions, renderManjuArchiveActions(image), renderPostActions(image));
   article.append(selector, img, info);
 
   if (prepend) {
@@ -1458,6 +3980,93 @@ function renderImage(image, container, prepend = false) {
   } else {
     container.append(article);
   }
+}
+
+async function savePromptFromImage(image) {
+  const text = String(image?.request?.prompt || image?.prompt || "").trim();
+  if (!text) {
+    showMessage("这张结果没有可保存的提示词记录。", true);
+    return;
+  }
+  await saveSavedPrompt({
+    name: makePromptName(text),
+    text,
+    mode: image?.request?.manjuContext ? "manju-result" : "result",
+    source: "result-card",
+  });
+}
+
+function renderManjuArchiveActions(image) {
+  const archives = readManjuArchives();
+  const record = archives[image.id];
+  const panel = document.createElement("div");
+  panel.className = "archive-actions";
+
+  const status = document.createElement("div");
+  status.className = "archive-status";
+  const badge = document.createElement("span");
+  badge.className = record ? "archive-badge" : "archive-badge muted";
+  badge.textContent = record
+    ? `${record.title} / ${getManjuArchiveCategoryLabel(record.category)}`
+    : "未归档";
+  status.append(badge);
+  if (record?.note) {
+    const note = document.createElement("span");
+    note.className = "archive-note";
+    note.textContent = record.note;
+    status.append(note);
+  }
+
+  const controls = document.createElement("div");
+  controls.className = "archive-controls";
+
+  const categorySelect = document.createElement("select");
+  categorySelect.className = "archive-category-select";
+  MANJU_ARCHIVE_CATEGORIES.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category.value;
+    option.textContent = category.label;
+    categorySelect.append(option);
+  });
+  categorySelect.value = record?.category || DEFAULT_MANJU_ARCHIVE_CATEGORY;
+
+  const noteInput = document.createElement("input");
+  noteInput.className = "archive-note-input";
+  noteInput.type = "text";
+  noteInput.maxLength = 80;
+  noteInput.placeholder = "角色名 / 镜号备注";
+  noteInput.value = record?.note || "";
+
+  const archiveButton = document.createElement("button");
+  archiveButton.type = "button";
+  archiveButton.textContent = "归档";
+  archiveButton.addEventListener("click", () => archiveManjuImage(image, categorySelect.value, noteInput.value));
+
+  const finalButton = document.createElement("button");
+  finalButton.type = "button";
+  finalButton.textContent = "定稿";
+  finalButton.addEventListener("click", () => {
+    categorySelect.value = "shot-final";
+    archiveManjuImage(image, categorySelect.value, noteInput.value);
+  });
+
+  const discardedButton = document.createElement("button");
+  discardedButton.type = "button";
+  discardedButton.textContent = "废稿";
+  discardedButton.addEventListener("click", () => {
+    categorySelect.value = "discarded";
+    archiveManjuImage(image, categorySelect.value, noteInput.value);
+  });
+
+  const clearButton = document.createElement("button");
+  clearButton.type = "button";
+  clearButton.textContent = "取消";
+  clearButton.disabled = !record;
+  clearButton.addEventListener("click", () => removeManjuImageArchive(image));
+
+  controls.append(categorySelect, noteInput, archiveButton, finalButton, discardedButton, clearButton);
+  panel.append(status, controls);
+  return panel;
 }
 
 function renderPostActions(image) {
@@ -1576,11 +4185,34 @@ async function extractPromptFromUploads() {
   });
 }
 
+async function extractSceneFromReferences() {
+  if (referenceImages.length === 0) {
+    showMessage("先添加参考图，再提取场景提示词。", true);
+    return;
+  }
+
+  await runImageAnalysis({
+    mode: "scene",
+    images: referenceImages.slice(0, 4).map(referenceImageAnalysisPayload),
+    busyText: `正在从 ${Math.min(referenceImages.length, 4)} 张参考图提取场景提示词。`,
+    title: `参考图场景 · ${Math.min(referenceImages.length, 4)} 张`,
+  });
+}
+
 function analysisImagePayload(image) {
   return {
     name: image.name,
     dataUrl: image.dataUrl,
     source: image.source,
+  };
+}
+
+function referenceImageAnalysisPayload(image) {
+  return {
+    name: image.name,
+    dataUrl: image.dataUrl,
+    url: image.url,
+    source: image.source || "reference",
   };
 }
 
@@ -1614,11 +4246,15 @@ function showAnalysisResult(analysis) {
   analysisTitle.textContent = analysis.title || "分析结果";
   analysisName.value = analysis.name || analysis.title || "分析结果";
   analysisResult.value = analysis.text || "";
-  useAnalysisButton.textContent = analysis.mode === "style"
+  useAnalysisButton.textContent = analysis.mode === "prompt-optimization"
+    ? "写入优化"
+    : analysis.mode === "style"
     ? "追加为风格"
     : analysis.mode === "keywords"
       ? "追加关键词"
-      : "写入提示词";
+      : analysis.mode === "scene"
+        ? "写入场景"
+        : "写入提示词";
 }
 
 async function copyAnalysisResult() {
@@ -1643,7 +4279,22 @@ function useAnalysisResult() {
     return;
   }
 
-  if (["style", "keywords"].includes(latestAnalysis.mode) && promptInput.value.trim()) {
+  if (latestAnalysis.mode === "prompt-optimization") {
+    promptInput.value = latestAnalysis.optimizedPrompt || extractOptimizedPromptFromText(text) || text;
+    if ((latestAnalysis.negativePrompt || "").trim()) {
+      negativePromptInput.value = latestAnalysis.negativePrompt.trim();
+    }
+  } else if (latestAnalysis.mode === "scene") {
+    if (activeMode === "manju" && manjuScenePack) {
+      manjuScenePack.value = [manjuScenePack.value.trim(), text].filter(Boolean).join("\n\n");
+      updatePromptPreview();
+      showMessage("已追加到漫剧场景提示词包。", false);
+      return;
+    }
+    promptInput.value = promptInput.value.trim()
+      ? `${promptInput.value.trim()}\n\nScene prompt package:\n${text}`
+      : text;
+  } else if (["style", "keywords"].includes(latestAnalysis.mode) && promptInput.value.trim()) {
     const label = latestAnalysis.mode === "style"
       ? "Style direction from uploaded references"
       : "Keywords from uploaded references";
@@ -1661,8 +4312,15 @@ function useAnalysisResult() {
   showMessage("已写入提示词。", false);
 }
 
+function extractOptimizedPromptFromText(text) {
+  const match = String(text || "").match(/优化后提示词\s*[：:]\s*([\s\S]*?)(?:(?:\n|\\n)\s*反向提示词\s*[：:]|$)/);
+  return match?.[1]?.trim() || "";
+}
+
 async function saveAnalysisPrompt() {
-  const text = getAnalysisText();
+  const text = latestAnalysis?.mode === "prompt-optimization"
+    ? (latestAnalysis.optimizedPrompt || extractOptimizedPromptFromText(getAnalysisText()) || getAnalysisText())
+    : getAnalysisText();
   if (!text) {
     showMessage("先生成或填写一段提示词内容再保存。", true);
     return;
@@ -1696,6 +4354,72 @@ async function saveAnalysisStyle() {
   });
 }
 
+async function saveCurrentPrompt() {
+  const text = promptInput.value.trim();
+  if (!text) {
+    showMessage("先填写一段提示词再收藏。", true);
+    return;
+  }
+  await saveSavedPrompt({
+    name: makePromptName(text),
+    text,
+    mode: activeMode,
+    source: "main-prompt",
+  });
+}
+
+async function optimizeCurrentPrompt() {
+  const text = promptInput.value.trim();
+  if (!text) {
+    showMessage("先填写一段提示词再优化。", true);
+    return;
+  }
+  optimizePromptButton.disabled = true;
+  showMessage("正在使用辅助 API 优化提示词。", false);
+  try {
+    const result = await fetchJson("/api/optimize-prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: text,
+        negativePrompt: negativePromptInput.value.trim(),
+        mode: promptOptimizeMode.value,
+        auxiliary: collectAuxiliaryPayload(),
+      }),
+    }, 240000);
+    const optimizedPrompt = result.optimizedPrompt || result.text || "";
+    latestAnalysis = {
+      mode: "prompt-optimization",
+      title: optimizeModeLabel(result.mode || promptOptimizeMode.value),
+      name: optimizeModeLabel(result.mode || promptOptimizeMode.value),
+      text: result.text || optimizedPrompt,
+      optimizedPrompt,
+      negativePrompt: result.negativePrompt || "",
+    };
+    showAnalysisResult(latestAnalysis);
+    showMessage("提示词优化完成，可写入或收藏。", false);
+  } catch (error) {
+    showMessage(normalizeFrontendError(error, "提示词优化失败。"), true);
+  } finally {
+    optimizePromptButton.disabled = false;
+  }
+}
+
+function optimizeModeLabel(mode) {
+  return {
+    conservative: "保守优化提示词",
+    quality: "质量优先提示词",
+    continuity: "连续性优先提示词",
+  }[mode] || "优化提示词";
+}
+
+function makePromptName(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 32) || "保存的提示词";
+}
+
 async function saveSavedPrompt(payload) {
   try {
     apiSettings = await fetchJson("/api/saved-prompts", {
@@ -1704,6 +4428,7 @@ async function saveSavedPrompt(payload) {
       body: JSON.stringify(payload),
     });
     renderSavedPrompts();
+    renderRecentPrompts();
     showMessage("提示词已保存。", false);
   } catch (error) {
     showMessage(normalizeFrontendError(error, "保存提示词失败。"), true);
@@ -1721,9 +4446,40 @@ async function deleteSavedPrompt(id) {
       body: JSON.stringify({ id }),
     });
     renderSavedPrompts();
+    renderRecentPrompts();
     showMessage("提示词已删除。", false);
   } catch (error) {
     showMessage(normalizeFrontendError(error, "删除提示词失败。"), true);
+  }
+}
+
+async function rememberRecentPrompt(payload) {
+  if (!payload?.text?.trim()) {
+    return;
+  }
+  try {
+    apiSettings = await fetchJson("/api/recent-prompts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderRecentPrompts();
+  } catch {
+    // Recent prompt tracking should never block generation or prompt editing.
+  }
+}
+
+async function deleteRecentPrompt(id) {
+  try {
+    apiSettings = await fetchJson("/api/recent-prompts/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    renderRecentPrompts();
+    showMessage("最近使用记录已移除。", false);
+  } catch (error) {
+    showMessage(normalizeFrontendError(error, "移除最近使用记录失败。"), true);
   }
 }
 
@@ -1776,6 +4532,12 @@ function useSavedPrompt(item, append) {
   } else {
     promptInput.value = item.text;
   }
+  rememberRecentPrompt({
+    name: item.name || makePromptName(item.text),
+    text: item.text,
+    mode: item.mode || activeMode,
+    source: append ? "prompt-append" : "prompt-use",
+  });
   updatePromptPreview();
   showMessage(append ? "已追加保存提示词。" : "已使用保存提示词。", false);
 }
@@ -1845,7 +4607,7 @@ function updateAnalysisActions() {
   extractUploadedStyleButton.disabled = isAnalysisBusy || analysisImages.length < 2;
 }
 
-function rerollImage(image) {
+async function rerollImage(image) {
   const request = image.request;
   if (!request?.prompt) {
     showMessage("这张图没有完整请求记录，不能重Roll。", true);
@@ -1862,12 +4624,21 @@ function rerollImage(image) {
     background: request.background || "auto",
     outputCompression: request.output_compression || 85,
     referenceImages: request.referenceImages || [],
+    autoArchiveManju: false,
   };
+  const manjuContext = getManjuGenerationContextForImage(image);
+  if (manjuContext) {
+    payload.manjuContext = manjuContext;
+  }
 
-  runGeneration(payload, "正在按原提示词和参数重Roll。");
+  const result = await runGeneration(payload, "正在按原提示词和参数重Roll。");
+  if (archiveDerivedManjuImages(image, result?.images, "重Roll", getDerivedManjuArchiveCategory(image, "reroll"))) {
+    await loadImages();
+    showMessage("已重Roll，并自动继承原分镜归档。", false);
+  }
 }
 
-function upscaleImage(image, preset) {
+async function upscaleImage(image, preset) {
   const size = resolvePostProcessSize(image, preset);
   const request = image.request || {};
   const basePrompt = request.prompt || image.prompt || promptInput.value.trim();
@@ -1888,12 +4659,21 @@ function upscaleImage(image, preset) {
     background: request.background || "auto",
     outputCompression: request.output_compression || 85,
     referenceImages: [generatedImageReference(image, "upscale")],
+    autoArchiveManju: false,
   };
+  const manjuContext = getManjuGenerationContextForImage(image);
+  if (manjuContext) {
+    payload.manjuContext = manjuContext;
+  }
 
-  runGeneration(payload, `正在放大到 ${size}。`);
+  const result = await runGeneration(payload, `正在放大到 ${size}。`);
+  if (archiveDerivedManjuImages(image, result?.images, "放大", getDerivedManjuArchiveCategory(image, "upscale"))) {
+    await loadImages();
+    showMessage("已放大，并自动继承原分镜归档。", false);
+  }
 }
 
-function tweakImage(image, instruction) {
+async function tweakImage(image, instruction) {
   const cleanInstruction = String(instruction || "").trim();
   if (cleanInstruction.length < 2) {
     showMessage("先写一句要微调哪里、改成什么样。", true);
@@ -1920,9 +4700,18 @@ function tweakImage(image, instruction) {
     background: request.background || "auto",
     outputCompression: request.output_compression || 85,
     referenceImages: [generatedImageReference(image, "local-tweak")],
+    autoArchiveManju: false,
   };
+  const manjuContext = getManjuGenerationContextForImage(image);
+  if (manjuContext) {
+    payload.manjuContext = manjuContext;
+  }
 
-  runGeneration(payload, "正在按参考图做局部微调。");
+  const result = await runGeneration(payload, "正在按参考图做局部微调。");
+  if (archiveDerivedManjuImages(image, result?.images, "微调", getDerivedManjuArchiveCategory(image, "tweak"))) {
+    await loadImages();
+    showMessage("已完成微调，并自动继承原分镜归档。", false);
+  }
 }
 
 function generatedImageReference(image, source) {
@@ -2058,12 +4847,23 @@ async function fetchJson(url, options = {}, timeoutMs = 10000) {
     }
     if (!response.ok) {
       const requestId = body.requestId ? `\nRequest ID: ${body.requestId}` : "";
-      throw new Error(`${body.error || `HTTP ${response.status}`}${requestId}`);
+      throw new Error(`${normalizeFetchJsonErrorMessage(response, body, text)}${requestId}`);
     }
     return body;
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+function normalizeFetchJsonErrorMessage(response, body, text) {
+  const raw = String(body?.error || body?.message || text || "").trim();
+  if (/524|timeout occurred|origin web server timed out|cloudflare|cf-error|host\s*error/i.test(raw)) {
+    return "上游 API 中转服务超时（Cloudflare 524）。建议先缩短提示词、降低尺寸/质量、一次生成 1 张，稍后重试或切换 API 配置。";
+  }
+  if (/<!doctype html|<html[\s>]/i.test(raw)) {
+    return `上游 API 返回了网页错误（HTTP ${response.status}），不是有效 JSON。请检查中转服务状态或 API Base URL。`;
+  }
+  return raw || `HTTP ${response.status}`;
 }
 
 function normalizeFrontendError(error, fallback) {

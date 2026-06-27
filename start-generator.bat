@@ -9,7 +9,7 @@ if exist ".env" (
     if /I "%%A"=="PORT" set "APP_PORT=%%B"
   )
 )
-set "APP_URL=http://localhost:%APP_PORT%"
+set "APP_URL=http://127.0.0.1:%APP_PORT%"
 
 if not exist ".env" (
   if exist ".env.example" (
