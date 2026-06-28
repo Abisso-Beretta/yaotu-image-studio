@@ -51,13 +51,14 @@ app.whenReady().then(() => {
     console.log("Legacy data migration:", JSON.stringify(migrationReport, null, 2));
   }
 
-  const { startServer } = require(path.join(__dirname, "..", "server.js"));
+  const { startServer, setUpdateController } = require(path.join(__dirname, "..", "server.js"));
   appServer = startServer(0, ({ port }) => {
     createWindow(port);
     const updateStatus = configureAutoUpdates({
       mainWindow,
       packageJsonPath: path.join(__dirname, "..", "package.json"),
     });
+    setUpdateController(updateStatus);
     console.log(`Auto update: ${updateStatus.enabled ? "enabled" : updateStatus.reason}`);
   });
 

@@ -1662,6 +1662,17 @@ input[type="range"] {
   padding: 0 12px;
 }
 
+.update-section .section-copy {
+  min-width: 0;
+}
+
+.update-section .section-copy p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 @media (max-width: 920px) {
   .shell {
     padding: 18px;

@@ -24,6 +24,7 @@ const ENV_OPENAI_IMAGE_ENDPOINT_MODE = ENDPOINT_MODE_VALUES.includes(String(proc
 const OPENAI_IMAGE_TIMEOUT_MS = clampInteger(process.env.OPENAI_IMAGE_TIMEOUT_MS, 60000, 1200000, 600000);
 const MAX_JSON_BODY_BYTES = clampInteger(process.env.MAX_JSON_BODY_BYTES, 1024 * 1024, 100 * 1024 * 1024, 50 * 1024 * 1024);
 const errorLogPath = path.join(dataDir, "server.err.log");
+let updateController = null;
 
 const LEGACY_SIZES = new Set([
   "auto",
@@ -90,6 +91,15 @@ const server = http.createServer(async (req, res) => {
         activeProfileName: apiConfig.name,
         outputDir,
       });
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/update/status") {
+      return sendJson(res, 200, getUpdateStatusPayload());
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/update/check") {
+      const result = await checkForAppUpdates();
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "GET" && requestUrl.pathname === "/api/settings") {
@@ -275,7 +285,36 @@ module.exports = {
   dataDir,
   outputDir,
   publicDir,
+  setUpdateController,
 };
+
+function setUpdateController(controller) {
+  updateController = controller && typeof controller === "object" ? controller : null;
+}
+
+function getUpdateStatusPayload() {
+  if (!updateController || typeof updateController.getStatus !== "function") {
+    return {
+      enabled: false,
+      status: "disabled",
+      reason: "desktop updater is unavailable",
+    };
+  }
+  return updateController.getStatus();
+}
+
+async function checkForAppUpdates() {
+  if (!updateController || typeof updateController.checkForUpdates !== "function") {
+    return {
+      enabled: false,
+      ok: false,
+      status: "disabled",
+      reason: "desktop updater is unavailable",
+      message: "desktop updater is unavailable",
+    };
+  }
+  return updateController.checkForUpdates();
+}
 
 function shouldRedirectToCanonicalHost(req) {
   const host = String(req.headers.host || "").toLowerCase();

@@ -563,6 +563,8 @@ const loadImageModelsButton = document.querySelector("#loadImageModelsButton");
 const loadAuxModelsButton = document.querySelector("#loadAuxModelsButton");
 const testAuxButton = document.querySelector("#testAuxButton");
 const saveAuxButton = document.querySelector("#saveAuxButton");
+const checkUpdateButton = document.querySelector("#checkUpdateButton");
+const updateStatusText = document.querySelector("#updateStatusText");
 const referenceInput = document.querySelector("#referenceInput");
 const extractReferenceSceneButton = document.querySelector("#extractReferenceSceneButton");
 const clearReferencesButton = document.querySelector("#clearReferencesButton");
@@ -784,6 +786,7 @@ loadImageModelsButton.addEventListener("click", loadImageModels);
 loadAuxModelsButton.addEventListener("click", loadAuxiliaryModels);
 testAuxButton.addEventListener("click", testAuxiliaryConnection);
 saveAuxButton.addEventListener("click", saveAuxiliarySettings);
+checkUpdateButton.addEventListener("click", checkForAppUpdates);
 newAuxProfileButton.addEventListener("click", createNewAuxiliaryProfileDraft);
 deleteAuxProfileButton.addEventListener("click", deleteActiveAuxiliaryProfile);
 profileSelect.addEventListener("change", activateSelectedProfile);
@@ -1868,6 +1871,7 @@ function openApiSettings() {
   apiSettingsModal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
   renderProfiles();
+  loadUpdateStatus();
 }
 
 function closeApiSettings() {
@@ -2690,6 +2694,7 @@ async function initialize() {
   updateSizeUi();
   await loadApiSettings();
   await loadConfig();
+  await loadUpdateStatus();
   await loadImages();
   renderReferenceImages();
   renderAnalysisImages();
@@ -2709,6 +2714,80 @@ async function loadConfig() {
     statusPill.textContent = "服务未连接";
     statusPill.classList.add("missing");
   }
+}
+
+async function loadUpdateStatus() {
+  try {
+    const status = await fetchJson("/api/update/status", {}, 5000);
+    renderUpdateStatus(status);
+  } catch (error) {
+    renderUpdateStatus({
+      enabled: false,
+      status: "error",
+      error: normalizeFrontendError(error, "读取更新状态失败。"),
+    });
+  }
+}
+
+async function checkForAppUpdates() {
+  checkUpdateButton.disabled = true;
+  renderUpdateStatus({ enabled: true, status: "checking" });
+  showApiMessage("正在检查软件更新。", false);
+  try {
+    const result = await fetchJson("/api/update/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }, 70000);
+    renderUpdateStatus(result);
+    if (result.status === "available") {
+      showApiMessage(`发现新版本：${result.availableVersion || "可用更新"}。请按弹窗提示下载。`, false);
+    } else if (result.status === "not-available") {
+      showApiMessage(`已是最新版本：${result.latestVersion || result.version || "当前版本"}。`, false);
+    } else if (result.status === "downloaded") {
+      showApiMessage("更新已下载，请按弹窗提示重启安装。", false);
+    } else {
+      showApiMessage(result.message || result.reason || result.error || "更新检查未完成。", !result.ok);
+    }
+  } catch (error) {
+    const message = normalizeFrontendError(error, "检查更新失败。");
+    renderUpdateStatus({ enabled: false, status: "error", error: message });
+    showApiMessage(message, true);
+  } finally {
+    checkUpdateButton.disabled = false;
+  }
+}
+
+function renderUpdateStatus(status = {}) {
+  const currentVersion = status.version ? `当前 ${status.version}` : "";
+  const checkedAt = status.checkedAt ? `，检查时间 ${formatDateTime(status.checkedAt)}` : "";
+  let text = "";
+
+  if (status.status === "checking" || status.checking) {
+    text = "正在检查更新...";
+  } else if (status.status === "available") {
+    text = `发现新版本 ${status.availableVersion || ""}${checkedAt}`;
+  } else if (status.status === "downloaded") {
+    text = `更新 ${status.availableVersion || ""} 已下载，等待重启安装`;
+  } else if (status.status === "not-available") {
+    text = `已是最新版本 ${status.latestVersion || status.version || ""}${checkedAt}`;
+  } else if (status.status === "disabled" || status.enabled === false) {
+    text = `当前环境不可自动更新：${status.reason || status.message || "未启用"}${currentVersion ? `（${currentVersion}）` : ""}`;
+  } else if (status.status === "error") {
+    text = `更新检查失败：${status.error || status.message || "未知错误"}`;
+  } else {
+    text = `自动更新已启用${currentVersion ? `（${currentVersion}）` : ""}`;
+  }
+
+  updateStatusText.textContent = text;
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "");
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
 }
 
 async function loadApiSettings() {

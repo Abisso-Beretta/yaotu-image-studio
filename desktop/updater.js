@@ -5,34 +5,71 @@ const PLACEHOLDER_OWNER = "YOUR_GITHUB_OWNER";
 const PLACEHOLDER_REPO = "YOUR_GITHUB_REPO";
 
 let updateCheckStarted = false;
+let latestUpdateState = {
+  enabled: false,
+  status: "idle",
+  reason: "not initialized",
+};
+let manualCheckPromise = null;
 
 function configureAutoUpdates(options = {}) {
   if (updateCheckStarted) {
-    return { enabled: false, reason: "already started" };
+    return createDisabledUpdateController("already started");
   }
 
   const status = getUpdateStatus(options.packageJsonPath);
   if (!status.enabled) {
-    return status;
+    latestUpdateState = {
+      ...status,
+      status: "disabled",
+      version: app.getVersion(),
+    };
+    return createDisabledUpdateController(status.reason, status);
   }
 
   let autoUpdater;
   try {
     ({ autoUpdater } = require("electron-updater"));
   } catch (error) {
-    return { enabled: false, reason: `electron-updater unavailable: ${error.message}` };
+    const unavailable = { enabled: false, reason: `electron-updater unavailable: ${error.message}` };
+    latestUpdateState = {
+      ...unavailable,
+      status: "disabled",
+      version: app.getVersion(),
+    };
+    return createDisabledUpdateController(unavailable.reason, unavailable);
   }
 
   updateCheckStarted = true;
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
+  latestUpdateState = {
+    ...status,
+    status: "idle",
+    version: app.getVersion(),
+  };
 
   autoUpdater.on("error", (error) => {
+    latestUpdateState = {
+      ...latestUpdateState,
+      status: "error",
+      checking: false,
+      error: error.message,
+      checkedAt: new Date().toISOString(),
+    };
     console.warn("Update check failed:", error.message);
   });
 
   autoUpdater.on("update-available", async (info) => {
     const version = info.version || "new version";
+    latestUpdateState = {
+      ...latestUpdateState,
+      status: "available",
+      checking: false,
+      availableVersion: version,
+      releaseDate: info.releaseDate,
+      checkedAt: new Date().toISOString(),
+    };
     const result = await dialog.showMessageBox(options.mainWindow, {
       type: "info",
       title: "Update available",
@@ -52,6 +89,14 @@ function configureAutoUpdates(options = {}) {
 
   autoUpdater.on("update-downloaded", async (info) => {
     const version = info.version || "new version";
+    latestUpdateState = {
+      ...latestUpdateState,
+      status: "downloaded",
+      checking: false,
+      availableVersion: version,
+      releaseDate: info.releaseDate,
+      checkedAt: new Date().toISOString(),
+    };
     const result = await dialog.showMessageBox(options.mainWindow, {
       type: "info",
       title: "Update downloaded",
@@ -67,16 +112,142 @@ function configureAutoUpdates(options = {}) {
     }
   });
 
+  autoUpdater.on("update-not-available", (info) => {
+    latestUpdateState = {
+      ...latestUpdateState,
+      status: "not-available",
+      checking: false,
+      latestVersion: info.version || app.getVersion(),
+      checkedAt: new Date().toISOString(),
+    };
+  });
+
+  function checkForUpdatesNow() {
+    if (manualCheckPromise) {
+      return manualCheckPromise;
+    }
+
+    latestUpdateState = {
+      ...latestUpdateState,
+      status: "checking",
+      checking: true,
+      error: "",
+    };
+
+    manualCheckPromise = new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = null;
+
+      const finish = (result) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        autoUpdater.off("update-available", onAvailable);
+        autoUpdater.off("update-not-available", onNotAvailable);
+        autoUpdater.off("error", onError);
+        manualCheckPromise = null;
+        resolve({
+          ...latestUpdateState,
+          ...result,
+          checkedAt: latestUpdateState.checkedAt || new Date().toISOString(),
+        });
+      };
+
+      const onAvailable = (info) => {
+        finish({
+          ok: true,
+          status: "available",
+          availableVersion: info.version || "",
+          releaseDate: info.releaseDate,
+          message: "Update available.",
+        });
+      };
+
+      const onNotAvailable = (info) => {
+        finish({
+          ok: true,
+          status: "not-available",
+          latestVersion: info.version || app.getVersion(),
+          message: "Already up to date.",
+        });
+      };
+
+      const onError = (error) => {
+        finish({
+          ok: false,
+          status: "error",
+          error: error.message,
+          message: error.message,
+        });
+      };
+
+      autoUpdater.once("update-available", onAvailable);
+      autoUpdater.once("update-not-available", onNotAvailable);
+      autoUpdater.once("error", onError);
+
+      timeoutId = setTimeout(() => {
+        latestUpdateState = {
+          ...latestUpdateState,
+          status: "error",
+          checking: false,
+          error: "Update check timed out.",
+          checkedAt: new Date().toISOString(),
+        };
+        finish({
+          ok: false,
+          status: "error",
+          error: "Update check timed out.",
+          message: "Update check timed out.",
+        });
+      }, 60000);
+
+      autoUpdater.checkForUpdates().catch(onError);
+    });
+
+    return manualCheckPromise;
+  }
+
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((error) => {
+    checkForUpdatesNow().catch((error) => {
       console.warn("Update check failed:", error.message);
     });
   }, 4000);
 
-  return status;
+  return {
+    ...status,
+    getStatus: () => ({ ...latestUpdateState }),
+    checkForUpdates: checkForUpdatesNow,
+  };
+}
+
+function createDisabledUpdateController(reason, details = {}) {
+  const state = {
+    ...details,
+    enabled: false,
+    status: "disabled",
+    reason,
+    version: app.getVersion(),
+  };
+  return {
+    ...state,
+    getStatus: () => ({ ...state }),
+    checkForUpdates: async () => ({
+      ...state,
+      ok: false,
+      message: reason,
+    }),
+  };
 }
 
 function getUpdateStatus(packageJsonPath = path.join(__dirname, "..", "package.json")) {
+  if (!app) {
+    return { enabled: false, reason: "electron app unavailable" };
+  }
+
   if (!app.isPackaged) {
     return { enabled: false, reason: "development mode" };
   }
