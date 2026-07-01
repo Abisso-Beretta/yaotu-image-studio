@@ -27,7 +27,8 @@ function createWindow(port) {
   });
 
   mainWindow.removeMenu();
-  mainWindow.loadURL(`http://127.0.0.1:${port}`);
+  // 默认打开新版界面（/studio）；旧页面仍可通过界面内「旧版」入口访问。
+  mainWindow.loadURL(`http://127.0.0.1:${port}/studio`);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };

@@ -28,6 +28,9 @@ jobs:
       - name: Check syntax
         run: npm run check
 
+      - name: Build web UI (/studio)
+        run: npm run build:ui
+
       - name: Build and publish Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink text-neutral-200 antialiased;
+    font-family: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  }
+  textarea,
+  input,
+  select {
+    @apply bg-panel border border-line rounded-lg px-3 py-2 text-sm text-neutral-100 outline-none;
+  }
+  textarea:focus,
+  input:focus,
+  select:focus {
+    @apply border-accent-soft;
+  }
+}

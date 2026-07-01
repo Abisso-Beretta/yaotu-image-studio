@@ -417,98 +417,9 @@ const MANJU_ARCHIVE_CATEGORIES = [
   { value: "shot-final", label: "分镜定稿" },
   { value: "discarded", label: "废稿" },
 ];
-const MANJU_FORMULA_PRESETS = {
-  shot: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "角色人设：",
-    "{人设提示词包}",
-    "",
-    "分镜画面：",
-    "{分镜描述}",
-    "",
-    "场景：{场景}",
-    "场景包：{场景包}",
-    "镜头：{景别}，{机位}",
-    "动作：{动作}",
-    "情绪：{情绪}",
-    "参考策略：{参考策略}",
-    "对白/旁白参考：{对白}",
-    "",
-    "硬性要求：保持角色脸型、发型、服装核心设计一致；保持全局画风统一；画面无文字、无水印、无 logo；不要生成对白字幕。",
-  ].join("\n"),
-  character: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "目标：生成可反复复用的人设资料卡关键图。",
-    "角色人设：{人设提示词包}",
-    "画面内容：{分镜描述}",
-    "镜头：{景别}，{机位}",
-    "情绪/姿态：{情绪}，{动作}",
-    "参考策略：角色优先，固定脸型、发型、瞳色、服装轮廓、标志物和年龄感。",
-    "输出要求：适合作为角色卡/三视图/细节图的稳定参考图；背景简洁；不要文字、水印、logo。",
-  ].join("\n"),
-  referenceFusion: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "目标：基于多张参考图融合出当前漫剧关键帧。",
-    "角色人设：{人设提示词包}",
-    "场景包：{场景包}",
-    "分镜画面：{分镜描述}",
-    "镜头：{景别}，{机位}",
-    "动作/情绪：{动作}，{情绪}",
-    "参考策略：{参考策略}",
-    "要求：从参考图继承身份、画风和场景结构，但不要复制参考图的原构图；保持主体一致、画风一致、空间关系清晰。",
-  ].join("\n"),
-  emotionCloseup: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "角色人设：{人设提示词包}",
-    "镜头类型：情绪特写 / 近景。",
-    "分镜画面：{分镜描述}",
-    "情绪重点：{情绪}",
-    "动作细节：{动作}",
-    "场景氛围：{场景}；{场景包}",
-    "要求：面部表情清楚，眼神有戏，背景弱化但保留剧情氛围；不要文字、水印、logo。",
-  ].join("\n"),
-  establishing: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "镜头类型：场景建立镜头。",
-    "场景：{场景}",
-    "场景包：{场景包}",
-    "分镜画面：{分镜描述}",
-    "镜头：{景别}，{机位}",
-    "氛围：{情绪}",
-    "要求：优先建立空间结构、光线、天气、关键道具和人物位置；角色可小但身份要稳定；不要文字、水印、logo。",
-  ].join("\n"),
-  interaction: [
-    "{全局画风包}",
-    "",
-    "剧名：{剧名}",
-    "镜头类型：双人/多人互动关键帧。",
-    "角色人设：{人设提示词包}",
-    "场景：{场景}；{场景包}",
-    "分镜画面：{分镜描述}",
-    "站位与动作：{动作}",
-    "情绪冲突：{情绪}",
-    "镜头：{景别}，{机位}",
-    "参考策略：多主体互动，同时保持多名角色身份稳定，明确站位、视线和肢体关系。",
-    "要求：不要合脸、不要换衣服、不要多手多指、不要文字、水印、logo。",
-  ].join("\n"),
-};
-const DEFAULT_MANJU_FORMULA = MANJU_FORMULA_PRESETS.shot;
 const DEFAULT_GENERAL_PROMPT = "面向 AI 图片管理软件的主题背景，现代、克制、有一点东方志怪感但不做古风插画，画面有层次但不抢内容，中心和右侧留出干净空间，适合承载侧边栏、卡片和预览区域。";
-const DEFAULT_MANJU_PROMPT = "女主推开会议室大门，所有人回头，男主站在落地窗前，窗外暴雨。";
 
 const form = document.querySelector("#generatorForm");
-const modeGeneralButton = document.querySelector("#modeGeneralButton");
-const modeManjuButton = document.querySelector("#modeManjuButton");
 const promptInput = document.querySelector("#prompt");
 const promptLabel = document.querySelector("#promptLabel");
 const negativePromptInput = document.querySelector("#negativePrompt");
@@ -600,37 +511,6 @@ const previewCaption = document.querySelector("#previewCaption");
 const previewClose = document.querySelector("#previewClose");
 const previewPrevious = document.querySelector("#previewPrevious");
 const previewNext = document.querySelector("#previewNext");
-const manjuPanel = document.querySelector("#manjuPanel");
-const manjuTabButtons = Array.from(document.querySelectorAll("[data-manju-tab]"));
-const manjuTabPanels = Array.from(document.querySelectorAll("[data-manju-panel]"));
-const manjuPackSelect = document.querySelector("#manjuPackSelect");
-const saveManjuPackButton = document.querySelector("#saveManjuPackButton");
-const loadManjuPackButton = document.querySelector("#loadManjuPackButton");
-const deleteManjuPackButton = document.querySelector("#deleteManjuPackButton");
-const manjuCharacterSelect = document.querySelector("#manjuCharacterSelect");
-const saveManjuCharacterButton = document.querySelector("#saveManjuCharacterButton");
-const loadManjuCharacterButton = document.querySelector("#loadManjuCharacterButton");
-const appendManjuCharacterButton = document.querySelector("#appendManjuCharacterButton");
-const deleteManjuCharacterButton = document.querySelector("#deleteManjuCharacterButton");
-const manjuCharacterName = document.querySelector("#manjuCharacterName");
-const manjuCharacterRole = document.querySelector("#manjuCharacterRole");
-const manjuCharacterPrompt = document.querySelector("#manjuCharacterPrompt");
-const manjuTitle = document.querySelector("#manjuTitle");
-const manjuFormulaPreset = document.querySelector("#manjuFormulaPreset");
-const manjuScene = document.querySelector("#manjuScene");
-const manjuReferenceStrategy = document.querySelector("#manjuReferenceStrategy");
-const manjuShotSize = document.querySelector("#manjuShotSize");
-const manjuCamera = document.querySelector("#manjuCamera");
-const manjuEmotion = document.querySelector("#manjuEmotion");
-const manjuAction = document.querySelector("#manjuAction");
-const manjuScenePack = document.querySelector("#manjuScenePack");
-const manjuStylePack = document.querySelector("#manjuStylePack");
-const manjuCharacterPack = document.querySelector("#manjuCharacterPack");
-const manjuDialogue = document.querySelector("#manjuDialogue");
-const manjuFormula = document.querySelector("#manjuFormula");
-const setManjuDefaultsButton = document.querySelector("#setManjuDefaultsButton");
-const refreshFormulaButton = document.querySelector("#refreshFormulaButton");
-const resetFormulaButton = document.querySelector("#resetFormulaButton");
 const manjuGalleryTools = document.querySelector("#manjuGalleryTools");
 const manjuArchiveActiveTitle = document.querySelector("#manjuArchiveActiveTitle");
 const manjuArchiveTitleFilter = document.querySelector("#manjuArchiveTitleFilter");
@@ -651,16 +531,8 @@ const loadShotQueuePromptButton = document.querySelector("#loadShotQueuePromptBu
 const generateShotQueueCurrentButton = document.querySelector("#generateShotQueueCurrentButton");
 const generateShotQueueAllButton = document.querySelector("#generateShotQueueAllButton");
 
-const requestedMode = new URLSearchParams(window.location.search).get("mode");
-let activeMode = requestedMode === "manju"
-  ? "manju"
-  : requestedMode === "general"
-    ? "general"
-    : localStorage.getItem("yaotu-workbench-mode") === "manju" ? "manju" : "general";
+let activeMode = "general";
 localStorage.setItem("yaotu-workbench-mode", activeMode);
-let activeManjuTab = ["project", "character", "shot"].includes(localStorage.getItem("yaotu-manju-active-tab"))
-  ? localStorage.getItem("yaotu-manju-active-tab")
-  : "project";
 let activePurpose = "software";
 let activeStyle = "none";
 let apiSettings = { activeProfileId: "", profiles: [], activeAuxiliaryProfileId: "", auxiliaryProfiles: [] };
@@ -678,31 +550,16 @@ let isAnalysisBusy = false;
 let activeShotQueue = readActiveShotQueue();
 let isShotQueueRunning = false;
 let activeManjuGenerationContext = null;
+let activeManjuProjectTitle = (localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || "").trim();
 
-manjuFormula.value = DEFAULT_MANJU_FORMULA;
-if (activeMode === "manju") {
-  activePurpose = "free";
-  purposePreset.value = "free";
-}
-applyWorkbenchMode(activeMode);
-promptInput.value = activeMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
+applyWorkbenchMode();
+promptInput.value = DEFAULT_GENERAL_PROMPT;
 applyManjuCharacterHandoff();
 applyManjuShotHandoff();
 applyManjuShotQueueHandoff();
 renderStylePresets();
 renderPromptLexicon();
-renderManjuPacks();
-renderManjuCharacterCards();
-renderManjuTabs();
 renderShotQueuePanel();
-modeGeneralButton.addEventListener("click", () => setWorkbenchMode("general"));
-modeManjuButton.addEventListener("click", () => {
-  localStorage.setItem("yaotu-workbench-mode", "general");
-  window.location.href = "/manju.html";
-});
-manjuTabButtons.forEach((button) => {
-  button.addEventListener("click", () => setManjuTab(button.dataset.manjuTab));
-});
 purposePreset.addEventListener("change", () => {
   activePurpose = purposePreset.value;
   updatePromptPreview();
@@ -817,35 +674,6 @@ auxModelSelect.addEventListener("change", () => {
   }
 });
 auxModel.addEventListener("input", syncAuxiliaryModelSelect);
-[manjuTitle, manjuScene, manjuReferenceStrategy, manjuShotSize, manjuCamera, manjuEmotion, manjuAction, manjuScenePack, manjuStylePack, manjuCharacterPack, manjuDialogue, manjuFormula].forEach((control) => {
-  control.addEventListener("input", updatePromptPreview);
-  control.addEventListener("change", updatePromptPreview);
-});
-manjuTitle.addEventListener("input", updateManjuArchiveToolbar);
-manjuTitle.addEventListener("change", updateManjuArchiveToolbar);
-manjuTitle.addEventListener("input", () => renderManjuCharacterCards());
-manjuTitle.addEventListener("change", () => renderManjuCharacterCards());
-manjuPackSelect.addEventListener("change", updateManjuPackActions);
-manjuFormulaPreset.addEventListener("change", applyManjuFormulaPreset);
-saveManjuPackButton.addEventListener("click", saveCurrentManjuPack);
-loadManjuPackButton.addEventListener("click", loadSelectedManjuPack);
-deleteManjuPackButton.addEventListener("click", deleteSelectedManjuPack);
-manjuCharacterSelect.addEventListener("change", updateManjuCharacterActions);
-saveManjuCharacterButton.addEventListener("click", saveCurrentManjuCharacterCard);
-loadManjuCharacterButton.addEventListener("click", loadSelectedManjuCharacterCard);
-appendManjuCharacterButton.addEventListener("click", appendSelectedManjuCharacterToPack);
-deleteManjuCharacterButton.addEventListener("click", deleteSelectedManjuCharacterCard);
-[manjuCharacterName, manjuCharacterRole, manjuCharacterPrompt].forEach((control) => {
-  control.addEventListener("input", updateManjuCharacterActions);
-  control.addEventListener("change", updateManjuCharacterActions);
-});
-setManjuDefaultsButton.addEventListener("click", applyManjuGenerationDefaults);
-refreshFormulaButton.addEventListener("click", updatePromptPreview);
-resetFormulaButton.addEventListener("click", () => {
-  manjuFormulaPreset.value = "shot";
-  manjuFormula.value = DEFAULT_MANJU_FORMULA;
-  updatePromptPreview();
-});
 copyAnalysisButton.addEventListener("click", copyAnalysisResult);
 useAnalysisButton.addEventListener("click", useAnalysisResult);
 saveAnalysisPromptButton.addEventListener("click", saveAnalysisPrompt);
@@ -903,28 +731,6 @@ function renderStylePresets() {
     } else {
       stylePresetGrid.append(button);
     }
-  });
-}
-
-function setManjuTab(tab) {
-  activeManjuTab = ["project", "character", "shot"].includes(tab) ? tab : "project";
-  localStorage.setItem("yaotu-manju-active-tab", activeManjuTab);
-  renderManjuTabs();
-}
-
-function renderManjuTabs() {
-  manjuTabButtons.forEach((button) => {
-    const isActive = button.dataset.manjuTab === activeManjuTab;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-selected", String(isActive));
-    button.tabIndex = isActive ? 0 : -1;
-  });
-
-  manjuTabPanels.forEach((panel) => {
-    const isActive = panel.dataset.manjuPanel === activeManjuTab;
-    panel.classList.toggle("active", isActive);
-    panel.hidden = !isActive;
-    panel.setAttribute("aria-hidden", String(!isActive));
   });
 }
 
@@ -1039,7 +845,7 @@ function applyManjuShotQueueHandoff() {
   activePurpose = "free";
   activeStyle = "none";
   purposePreset.value = "free";
-  manjuTitle.value = queue.title;
+  setCurrentManjuTitle(queue.title);
   localStorage.setItem("yaotu-workbench-mode", activeMode);
   writeActiveShotQueue();
   applyWorkbenchMode(activeMode);
@@ -1147,8 +953,7 @@ function syncManjuProjectContext(source) {
   const project = source?.project && typeof source.project === "object" ? source.project : {};
   const title = String(project.title || source?.title || "").trim();
   if (title) {
-    manjuTitle.value = title;
-    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, title);
+    setCurrentManjuTitle(title);
   }
 
   const packSource = project.pack && typeof project.pack === "object" ? project.pack : null;
@@ -1161,8 +966,6 @@ function syncManjuProjectContext(source) {
       updatedAt: new Date().toISOString(),
     };
     writeManjuPacks([pack, ...packs.filter((item) => item.id !== pack.id && item.title !== pack.title)]);
-    applyManjuPack(pack);
-    renderManjuPacks(pack.id);
   }
 
   const projectCharacters = Array.isArray(project.characters) ? project.characters : [];
@@ -1196,7 +999,6 @@ function syncManjuProjectContext(source) {
       }
     });
     writeManjuCharacterCards(next);
-    renderManjuCharacterCards();
   }
 }
 
@@ -1480,9 +1282,7 @@ function renderShotQueuePanel() {
   const doneCount = activeShotQueue.shots.filter((shot) => shot.status === "done").length;
   shotQueuePanel.hidden = false;
   document.body.classList.add("shot-queue-mode");
-  if (manjuTitle.value.trim() !== activeShotQueue.title) {
-    manjuTitle.value = activeShotQueue.title;
-  }
+  setCurrentManjuTitle(activeShotQueue.title);
   shotQueueTitle.textContent = "连续关键帧";
   shotQueueProgress.textContent = `${doneCount} / ${activeShotQueue.shots.length}`;
   shotQueueCurrent.textContent = current
@@ -1528,7 +1328,7 @@ function loadActiveShotQueuePrompt(showToast = true) {
   activeStyle = "none";
   purposePreset.value = "free";
   promptInput.value = shot.prompt;
-  manjuTitle.value = activeShotQueue.title;
+  setCurrentManjuTitle(activeShotQueue.title);
   activeManjuGenerationContext = normalizeManjuGenerationContext(shot.manjuContext || {
     type: "shot",
     title: activeShotQueue.title,
@@ -1820,49 +1620,12 @@ function updateManjuCharacterAssetsFromImages(context, images) {
     updatedAt: new Date().toISOString(),
   };
   writeManjuCharacterCards(cards);
-  renderManjuCharacterCards(cards[index].id);
 }
 
-function setWorkbenchMode(mode) {
-  const previousMode = activeMode;
-  const previousDefault = previousMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
-  const nextMode = mode === "manju" ? "manju" : "general";
-  const nextDefault = nextMode === "manju" ? DEFAULT_MANJU_PROMPT : DEFAULT_GENERAL_PROMPT;
-  const shouldSwapPrompt = !promptInput.value.trim() || promptInput.value.trim() === previousDefault;
-  activeMode = nextMode;
-  if (shouldSwapPrompt) {
-    promptInput.value = nextDefault;
-  }
-  if (activeMode === "manju" && activePurpose === "software") {
-    activePurpose = "free";
-    purposePreset.value = "free";
-  }
-  localStorage.setItem("yaotu-workbench-mode", activeMode);
-  syncModeUrl(activeMode);
-  applyWorkbenchMode(activeMode);
-  updatePromptPreview();
-  loadImages();
-}
-
-function syncModeUrl(mode) {
-  const url = new URL(window.location.href);
-  if (url.searchParams.get("mode") === mode) {
-    return;
-  }
-  url.searchParams.set("mode", mode);
-  window.history.replaceState({}, "", `${url.pathname}?${url.searchParams.toString()}${url.hash}`);
-}
-
-function applyWorkbenchMode(mode) {
-  const isManju = mode === "manju";
-  document.body.classList.toggle("manju-mode", isManju);
-  modeGeneralButton.classList.toggle("active", !isManju);
-  modeManjuButton.classList.toggle("active", isManju);
-  manjuPanel.hidden = !isManju;
-  promptLabel.textContent = isManju ? "分镜描述" : "画面方向";
-  promptInput.placeholder = isManju
-    ? `例如：${DEFAULT_MANJU_PROMPT}`
-    : "例如：深色 AI 图片管理工具背景，带细腻玻璃质感、微弱数据流，中心和右侧留出干净区域，适合承载软件面板。";
+function applyWorkbenchMode() {
+  document.body.classList.remove("manju-mode");
+  promptLabel.textContent = "画面方向";
+  promptInput.placeholder = "例如：深色 AI 图片管理工具背景，带细腻玻璃质感、微弱数据流，中心和右侧留出干净区域，适合承载软件面板。";
   updateManjuArchiveToolbar();
 }
 
@@ -1895,33 +1658,6 @@ function writeManjuPacks(packs) {
   localStorage.setItem(MANJU_PACKS_STORAGE_KEY, JSON.stringify(packs.slice(0, 80)));
 }
 
-function renderManjuPacks(selectedId = manjuPackSelect.value) {
-  const packs = readManjuPacks().sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
-  manjuPackSelect.innerHTML = "";
-  const draftOption = document.createElement("option");
-  draftOption.value = "";
-  draftOption.textContent = "当前草稿 / 未保存";
-  manjuPackSelect.append(draftOption);
-
-  packs.forEach((pack) => {
-    const option = document.createElement("option");
-    option.value = pack.id;
-    option.textContent = pack.title || "未命名漫剧包";
-    manjuPackSelect.append(option);
-  });
-
-  if (packs.some((pack) => pack.id === selectedId)) {
-    manjuPackSelect.value = selectedId;
-  }
-  updateManjuPackActions();
-}
-
-function updateManjuPackActions() {
-  const hasSelectedPack = Boolean(manjuPackSelect.value);
-  loadManjuPackButton.disabled = !hasSelectedPack;
-  deleteManjuPackButton.disabled = !hasSelectedPack;
-}
-
 function makeManjuPackId(title) {
   const normalized = String(title || "manju-pack")
     .trim()
@@ -1930,93 +1666,6 @@ function makeManjuPackId(title) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 48) || "manju-pack";
   return `${normalized}-${Date.now().toString(36)}`;
-}
-
-function collectManjuPackPayload(existingId = "") {
-  const title = manjuTitle.value.trim();
-  const now = new Date().toISOString();
-  return {
-    id: existingId || makeManjuPackId(title),
-    title,
-    formulaPreset: manjuFormulaPreset.value,
-    scene: manjuScene.value.trim(),
-    referenceStrategy: manjuReferenceStrategy.value,
-    shotSize: manjuShotSize.value,
-    camera: manjuCamera.value,
-    emotion: manjuEmotion.value.trim(),
-    action: manjuAction.value.trim(),
-    scenePack: manjuScenePack.value.trim(),
-    stylePack: manjuStylePack.value.trim(),
-    characterPack: manjuCharacterPack.value.trim(),
-    dialogue: manjuDialogue.value.trim(),
-    formula: manjuFormula.value,
-    updatedAt: now,
-  };
-}
-
-function applyManjuPack(pack) {
-  manjuTitle.value = pack.title || "";
-  manjuFormulaPreset.value = MANJU_FORMULA_PRESETS[pack.formulaPreset] ? pack.formulaPreset : "shot";
-  manjuScene.value = pack.scene || "";
-  manjuReferenceStrategy.value = pack.referenceStrategy || manjuReferenceStrategy.options[0]?.value || "";
-  manjuShotSize.value = pack.shotSize || "中景";
-  manjuCamera.value = pack.camera || "平视镜头";
-  manjuEmotion.value = pack.emotion || "";
-  manjuAction.value = pack.action || "";
-  manjuScenePack.value = pack.scenePack || "";
-  manjuStylePack.value = pack.stylePack || "";
-  manjuCharacterPack.value = pack.characterPack || "";
-  manjuDialogue.value = pack.dialogue || "";
-  manjuFormula.value = pack.formula || MANJU_FORMULA_PRESETS[manjuFormulaPreset.value] || DEFAULT_MANJU_FORMULA;
-  updatePromptPreview();
-  renderManjuCharacterCards();
-  updateManjuArchiveToolbar();
-}
-
-function saveCurrentManjuPack() {
-  const title = manjuTitle.value.trim();
-  if (!title) {
-    showMessage("先给漫剧包填一个剧名，再保存。", true);
-    return;
-  }
-
-  const packs = readManjuPacks();
-  const selectedId = manjuPackSelect.value;
-  const sameTitle = packs.find((pack) => pack.title === title);
-  const targetId = selectedId || sameTitle?.id || "";
-  const payload = collectManjuPackPayload(targetId);
-  const nextPacks = [payload, ...packs.filter((pack) => pack.id !== payload.id)];
-  writeManjuPacks(nextPacks);
-  renderManjuPacks(payload.id);
-  showMessage(`漫剧包“${payload.title}”已保存。`, false);
-}
-
-function loadSelectedManjuPack() {
-  const pack = readManjuPacks().find((item) => item.id === manjuPackSelect.value);
-  if (!pack) {
-    showMessage("先选择一个已保存的漫剧包。", true);
-    return;
-  }
-  if (activeMode !== "manju") {
-    setWorkbenchMode("manju");
-  }
-  applyManjuPack(pack);
-  showMessage(`已加载漫剧包“${pack.title || "未命名"}”。`, false);
-}
-
-function deleteSelectedManjuPack() {
-  const packs = readManjuPacks();
-  const pack = packs.find((item) => item.id === manjuPackSelect.value);
-  if (!pack) {
-    showMessage("先选择一个已保存的漫剧包。", true);
-    return;
-  }
-  if (!window.confirm(`确定删除漫剧包“${pack.title || "未命名"}”吗？`)) {
-    return;
-  }
-  writeManjuPacks(packs.filter((item) => item.id !== pack.id));
-  renderManjuPacks("");
-  showMessage("漫剧包已删除。", false);
 }
 
 function readManjuCharacterCards() {
@@ -2048,156 +1697,15 @@ function getManjuCharacterCardsForTitle(title = getCurrentManjuTitle()) {
     .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hans-CN"));
 }
 
-function renderManjuCharacterCards(selectedId = manjuCharacterSelect.value) {
-  const cards = getManjuCharacterCardsForTitle();
-  manjuCharacterSelect.innerHTML = "";
-
-  const draftOption = document.createElement("option");
-  draftOption.value = "";
-  draftOption.textContent = "当前草稿 / 未保存";
-  manjuCharacterSelect.append(draftOption);
-
-  cards.forEach((card) => {
-    const option = document.createElement("option");
-    option.value = card.id;
-    option.textContent = card.role ? `${card.name} · ${card.role}` : card.name;
-    manjuCharacterSelect.append(option);
-  });
-
-  if (cards.some((card) => card.id === selectedId)) {
-    manjuCharacterSelect.value = selectedId;
-  }
-  updateManjuCharacterActions();
-}
-
-function updateManjuCharacterActions() {
-  const hasSelectedCard = Boolean(manjuCharacterSelect.value);
-  const hasDraft = Boolean(manjuCharacterName.value.trim() || manjuCharacterPrompt.value.trim());
-  saveManjuCharacterButton.disabled = !hasDraft;
-  loadManjuCharacterButton.disabled = !hasSelectedCard;
-  deleteManjuCharacterButton.disabled = !hasSelectedCard;
-  appendManjuCharacterButton.disabled = !hasSelectedCard && !manjuCharacterPrompt.value.trim();
-}
-
-function collectManjuCharacterCardPayload(existingId = "") {
-  const title = getCurrentManjuTitle();
-  const name = manjuCharacterName.value.trim();
-  const role = manjuCharacterRole.value.trim();
-  const prompt = manjuCharacterPrompt.value.trim();
-  return {
-    id: existingId || makeManjuCharacterCardId(title, name),
-    title,
-    name,
-    role,
-    prompt,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function applyManjuCharacterCard(card) {
-  manjuCharacterName.value = card.name || "";
-  manjuCharacterRole.value = card.role || "";
-  manjuCharacterPrompt.value = card.prompt || "";
-  updateManjuCharacterActions();
-}
-
-function saveCurrentManjuCharacterCard() {
-  const title = getCurrentManjuTitle();
-  const name = manjuCharacterName.value.trim();
-  const prompt = manjuCharacterPrompt.value.trim();
-  if (!name || !prompt) {
-    showMessage("先填写角色名和人设提示词卡，再保存角色。", true);
-    return;
-  }
-
-  const cards = readManjuCharacterCards();
-  const selectedId = manjuCharacterSelect.value;
-  const sameCharacter = cards.find((card) => card.title === title && card.name === name);
-  const targetId = selectedId || sameCharacter?.id || "";
-  const payload = collectManjuCharacterCardPayload(targetId);
-  const nextCards = [payload, ...cards.filter((card) => card.id !== payload.id)];
-  writeManjuCharacterCards(nextCards);
-  renderManjuCharacterCards(payload.id);
-  showMessage(`人设资料卡“${payload.name}”已保存到「${title}」。`, false);
-}
-
-function loadSelectedManjuCharacterCard() {
-  const card = readManjuCharacterCards().find((item) => item.id === manjuCharacterSelect.value);
-  if (!card) {
-    showMessage("先选择一个已保存的人设资料卡。", true);
-    return;
-  }
-  applyManjuCharacterCard(card);
-  showMessage(`已加载人设资料卡“${card.name || "未命名"}”。`, false);
-}
-
-function deleteSelectedManjuCharacterCard() {
-  const cards = readManjuCharacterCards();
-  const card = cards.find((item) => item.id === manjuCharacterSelect.value);
-  if (!card) {
-    showMessage("先选择一个已保存的人设资料卡。", true);
-    return;
-  }
-  if (!window.confirm(`确定删除人设资料卡“${card.name || "未命名"}”吗？`)) {
-    return;
-  }
-  writeManjuCharacterCards(cards.filter((item) => item.id !== card.id));
-  renderManjuCharacterCards("");
-  showMessage("人设资料卡已删除。", false);
-}
-
-function appendSelectedManjuCharacterToPack() {
-  const selectedCard = readManjuCharacterCards().find((item) => item.id === manjuCharacterSelect.value);
-  const draftCard = collectManjuCharacterCardPayload("");
-  const card = selectedCard || draftCard;
-  const line = formatManjuCharacterPromptLine(card);
-  if (!line) {
-    showMessage("先选择或填写一张人设资料卡。", true);
-    return;
-  }
-
-  const existing = manjuCharacterPack.value.trim();
-  if (existing.includes(line)) {
-    showMessage("这张人设资料卡已经在人设提示词包里了。", false);
-    return;
-  }
-
-  manjuCharacterPack.value = existing ? `${existing}\n${line}` : line;
-  updatePromptPreview();
-  showMessage(`已写入人设提示词包：${card.name || "未命名角色"}。`, false);
-}
-
-function formatManjuCharacterPromptLine(card) {
-  const name = String(card?.name || "").trim();
-  const prompt = String(card?.prompt || "").trim();
-  if (!name || !prompt) {
-    return "";
-  }
-  const role = String(card.role || "").trim();
-  return `${name}${role ? `（${role}）` : ""}：${prompt}`;
-}
-
-function applyManjuFormulaPreset() {
-  manjuFormula.value = MANJU_FORMULA_PRESETS[manjuFormulaPreset.value] || DEFAULT_MANJU_FORMULA;
-  updatePromptPreview();
-}
-
-function applyManjuGenerationDefaults() {
-  if (activeMode !== "manju") {
-    setWorkbenchMode("manju");
-  }
-  setModelInputValue("gpt-image-2");
-  sizeSelect.value = "2160x3840";
-  document.querySelector("#quality").value = "high";
-  document.querySelector("#count").value = "4";
-  document.querySelector("#background").value = "opaque";
-  updateSizeUi();
-  updatePromptPreview();
-  showMessage("已切到竖屏漫剧参数：gpt-image-2、9:16 4K、高质量、4 张候选。", false);
-}
-
 function getCurrentManjuTitle() {
-  return manjuTitle.value.trim() || "未命名漫剧";
+  return activeManjuProjectTitle.trim() || "未命名漫剧";
+}
+
+function setCurrentManjuTitle(title) {
+  activeManjuProjectTitle = String(title || "").trim();
+  if (activeManjuProjectTitle) {
+    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, activeManjuProjectTitle);
+  }
 }
 
 function isValidManjuArchiveCategory(value) {
@@ -2321,9 +1829,8 @@ function archiveRecordMatchesFilters(record, titleFilter, categoryFilter) {
 }
 
 function isManjuArchiveFilterActive() {
-  return (activeMode === "manju" || Boolean(activeShotQueue?.shots?.length))
-    && (manjuArchiveTitleFilter.value !== MANJU_ARCHIVE_ALL_VALUE
-      || manjuArchiveCategoryFilter.value !== MANJU_ARCHIVE_ALL_VALUE);
+  return manjuArchiveTitleFilter.value !== MANJU_ARCHIVE_ALL_VALUE
+    || manjuArchiveCategoryFilter.value !== MANJU_ARCHIVE_ALL_VALUE;
 }
 
 function filterManjuGalleryImages(images, archives = readManjuArchives()) {
@@ -2349,7 +1856,8 @@ function updateManjuArchiveToolbar() {
   const archives = readManjuArchives();
   const records = Object.values(archives);
   const currentTitle = getCurrentManjuTitle();
-  const showManjuTools = activeMode === "manju" || Boolean(activeShotQueue?.shots?.length);
+  const currentTitleHasArchives = records.some((item) => item.title === currentTitle);
+  const showManjuTools = Boolean(activeShotQueue?.shots?.length) || currentTitleHasArchives;
   manjuGalleryTools.hidden = !showManjuTools;
   manjuArchiveActiveTitle.textContent = currentTitle;
   renderManjuArchiveTitleOptions(archives);
@@ -2381,8 +1889,7 @@ function renderArchiveQuickPanel(archives = readManjuArchives()) {
   const sceneRecords = records
     .filter((record) => record.category === "scene")
     .slice(0, 12);
-  const showPanel = activeMode === "manju"
-    || Boolean(activeShotQueue?.shots?.length)
+  const showPanel = Boolean(activeShotQueue?.shots?.length)
     || characterRecords.length > 0
     || sceneRecords.length > 0;
   archiveQuickPanel.hidden = !showPanel;
@@ -2613,10 +2120,11 @@ async function exportCurrentManjuArchive() {
   exportManjuArchiveButton.textContent = "导出中";
 
   try {
+    const storedPack = readManjuPacks().find((item) => item.title === title);
     const pack = {
-      ...collectManjuPackPayload(manjuPackSelect.value || ""),
+      ...(storedPack || {}),
       title,
-      activeFormulaPreset: manjuFormulaPreset.value,
+      activeFormulaPreset: storedPack?.formulaPreset || "shot",
     };
     const result = await fetchJson("/api/manju/archive/export", {
       method: "POST",
@@ -3667,7 +3175,7 @@ async function runGeneration(payload, statusText, options = {}) {
       archiveGeneratedManjuImages(result.images, manjuContext);
     }
     await rememberRecentPrompt({
-      name: makePromptName(activeMode === "manju" ? promptInput.value.trim() : requestPayload.prompt),
+      name: makePromptName(requestPayload.prompt),
       text: requestPayload.prompt,
       mode: activeMode,
       source: "generation",
@@ -3923,9 +3431,7 @@ function updateSizeUi() {
 }
 
 function composePrompt() {
-  const userText = activeMode === "manju"
-    ? buildManjuPrompt()
-    : promptInput.value.trim();
+  const userText = promptInput.value.trim();
   const purpose = purposePresets[activePurpose] || purposePresets.free;
   const style = getAllStylePresets()[activeStyle] || getAllStylePresets().none;
   const lines = [userText];
@@ -3949,25 +3455,6 @@ function composePrompt() {
   }
 
   return lines.join("\n");
-}
-
-function buildManjuPrompt() {
-  const values = {
-    "剧名": manjuTitle.value.trim() || "未命名漫剧",
-    "全局画风包": manjuStylePack.value.trim() || "竖屏漫剧关键帧，统一画风，角色一致，电影感构图。",
-    "人设提示词包": manjuCharacterPack.value.trim() || "沿用已绑定角色人设，保持脸型、发型、服装核心设计一致。",
-    "分镜描述": promptInput.value.trim() || "当前分镜画面待填写。",
-    "场景": manjuScene.value.trim() || "未指定场景",
-    "场景包": manjuScenePack.value.trim() || "固定场景未填写，按当前分镜建立空间结构。",
-    "景别": manjuShotSize.value,
-    "机位": manjuCamera.value,
-    "情绪": manjuEmotion.value.trim() || "情绪明确，符合剧情张力",
-    "动作": manjuAction.value.trim() || "角色动作清晰，姿态自然",
-    "参考策略": manjuReferenceStrategy.value,
-    "对白": manjuDialogue.value.trim() || "无对白，只保留画面叙事",
-  };
-  const formula = manjuFormula.value.trim() || DEFAULT_MANJU_FORMULA;
-  return formula.replace(/\{([^{}]+)\}/g, (match, key) => values[key.trim()] ?? match);
 }
 
 function updatePromptPreview() {
@@ -4364,12 +3851,6 @@ function useAnalysisResult() {
       negativePromptInput.value = latestAnalysis.negativePrompt.trim();
     }
   } else if (latestAnalysis.mode === "scene") {
-    if (activeMode === "manju" && manjuScenePack) {
-      manjuScenePack.value = [manjuScenePack.value.trim(), text].filter(Boolean).join("\n\n");
-      updatePromptPreview();
-      showMessage("已追加到漫剧场景提示词包。", false);
-      return;
-    }
     promptInput.value = promptInput.value.trim()
       ? `${promptInput.value.trim()}\n\nScene prompt package:\n${text}`
       : text;

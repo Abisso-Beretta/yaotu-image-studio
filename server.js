@@ -7,6 +7,8 @@ const rootDir = __dirname;
 const dataDir = path.resolve(process.env.YAOTU_DATA_DIR || rootDir);
 const publicDir = path.join(rootDir, "public");
 const outputDir = path.join(dataDir, "outputs");
+const styleReferenceDir = path.join(outputDir, "_style-references");
+const projectsDir = path.join(outputDir, "_projects");
 const envPath = path.join(dataDir, ".env");
 const settingsPath = path.join(dataDir, "api-profiles.json");
 
@@ -25,6 +27,13 @@ const OPENAI_IMAGE_TIMEOUT_MS = clampInteger(process.env.OPENAI_IMAGE_TIMEOUT_MS
 const MAX_JSON_BODY_BYTES = clampInteger(process.env.MAX_JSON_BODY_BYTES, 1024 * 1024, 100 * 1024 * 1024, 50 * 1024 * 1024);
 const errorLogPath = path.join(dataDir, "server.err.log");
 let updateController = null;
+
+let APP_VERSION = "0.0.0";
+try {
+  APP_VERSION = JSON.parse(fs.readFileSync(path.join(__dirname, "package.json"), "utf8")).version || APP_VERSION;
+} catch {
+  // 读不到 package.json 就用兜底版本号
+}
 
 const LEGACY_SIZES = new Set([
   "auto",
@@ -90,6 +99,7 @@ const server = http.createServer(async (req, res) => {
         endpointMode: apiConfig.endpointMode,
         activeProfileName: apiConfig.name,
         outputDir,
+        version: APP_VERSION,
       });
     }
 
@@ -221,6 +231,67 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    // 漫剧项目（磁盘持久化的生图任务包）
+    if (req.method === "GET" && requestUrl.pathname === "/api/projects") {
+      return sendJson(res, 200, listProjects());
+    }
+    if (req.method === "GET" && requestUrl.pathname === "/api/project") {
+      return sendJson(res, 200, getProject(requestUrl.searchParams.get("key")));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/projects/import") {
+      const body = await readJson(req);
+      return sendJson(res, 200, importJobPackage(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await addProjectCharacterRef(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/generate-shot") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await generateProjectShot(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/generate-character-base") {
+      const body = await readJson(req);
+      return sendJson(res, 200, await generateCharacterBase(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/choose") {
+      const body = await readJson(req);
+      return sendJson(res, 200, chooseProjectRender(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/export") {
+      const body = await readJson(req);
+      return sendJson(res, 200, exportProject(body));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/open-folder") {
+      const body = await readJson(req);
+      return sendJson(res, 200, openProjectExportFolder(body));
+    }
+    // 漫剧编辑层：手动增删改
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/create") {
+      return sendJson(res, 200, createEmptyProject(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/shot") {
+      return sendJson(res, 200, upsertProjectShot(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/shot/delete") {
+      return sendJson(res, 200, deleteProjectShot(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character") {
+      return sendJson(res, 200, upsertProjectCharacter(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character/delete") {
+      return sendJson(res, 200, deleteProjectCharacter(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/delete") {
+      return sendJson(res, 200, deleteProjectCharacterRef(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/lock") {
+      return sendJson(res, 200, lockProjectCharacterRef(await readJson(req)));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/candidate/delete") {
+      return sendJson(res, 200, deleteProjectCandidate(await readJson(req)));
+    }
+
     if (req.method === "POST" && requestUrl.pathname === "/api/analyze-image") {
       const body = await readJson(req);
       const result = await analyzeImages(body);
@@ -236,6 +307,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && requestUrl.pathname.startsWith("/outputs/")) {
       const relativePath = decodeURIComponent(requestUrl.pathname.replace(/^\/outputs\//, ""));
       return serveFile(res, outputDir, relativePath);
+    }
+
+    // 新版前端（Vite 构建产物）托管在 /studio，与旧页面并存。
+    if (req.method === "GET" && (requestUrl.pathname === "/studio" || requestUrl.pathname.startsWith("/studio/"))) {
+      const studioDir = path.join(rootDir, "app", "dist");
+      let relativePath = requestUrl.pathname.replace(/^\/studio\/?/, "");
+      if (!relativePath || !/\.[a-z0-9]+$/i.test(relativePath)) {
+        relativePath = "index.html"; // SPA 回退
+      }
+      return serveFile(res, studioDir, relativePath);
     }
 
     if (req.method === "GET") {
@@ -258,7 +339,541 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// ===== 漫剧项目库（磁盘持久化的生图任务包，存在 outputs/_projects/<key>/）=====
+
+function projectSlug(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9一-龥_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "project";
+}
+
+function projectKeyFromPackage(pkg) {
+  const base = projectSlug(pkg?.project?.id || pkg?.project?.name || "project");
+  const ep = pkg?.episode ? `-${projectSlug(pkg.episode)}` : "";
+  return `${base}${ep}`.slice(0, 100);
+}
+
+function projectDirFor(key) {
+  const slug = projectSlug(key);
+  const dir = path.resolve(projectsDir, slug);
+  if (dir !== path.resolve(projectsDir, slug) || !dir.startsWith(path.resolve(projectsDir) + path.sep)) {
+    throw httpError(400, "Bad project key.");
+  }
+  return dir;
+}
+
+function readProjectFile(key) {
+  const file = path.join(projectDirFor(key), "project.json");
+  if (!fs.existsSync(file)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function writeProjectFile(key, project) {
+  const dir = projectDirFor(key);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "project.json"), JSON.stringify(project, null, 2), "utf8");
+  return project;
+}
+
+function projectSummary(key, project) {
+  const characters = Array.isArray(project.characters) ? project.characters : [];
+  const shots = Array.isArray(project.shots) ? project.shots : [];
+  const renders = Array.isArray(project.renders) ? project.renders : [];
+  return {
+    key,
+    name: project.project?.name || key,
+    episode: project.episode || "",
+    medium: project.project?.medium || "vertical",
+    characterCount: characters.length,
+    charactersWithRef: characters.filter((c) => Array.isArray(c.referenceImages) && c.referenceImages.length).length,
+    shotCount: shots.length,
+    chosenCount: renders.filter((r) => r.chosenImageId).length,
+  };
+}
+
+function listProjects() {
+  if (!fs.existsSync(projectsDir)) {
+    return { projects: [] };
+  }
+  const keys = fs.readdirSync(projectsDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+  const projects = [];
+  for (const key of keys) {
+    const project = readProjectFile(key);
+    if (project) {
+      projects.push(projectSummary(key, project));
+    }
+  }
+  projects.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return { projects };
+}
+
+function getProject(key) {
+  if (!key) {
+    throw httpError(400, "Missing project key.");
+  }
+  const project = readProjectFile(key);
+  if (!project) {
+    throw httpError(404, "Project not found.");
+  }
+  return { key: projectSlug(key), project };
+}
+
+function importJobPackage(pkg) {
+  if (!pkg || typeof pkg !== "object" || !pkg.project || !Array.isArray(pkg.shots)) {
+    throw httpError(400, "不是有效的生图任务包（缺 project 或 shots）。");
+  }
+  const key = projectKeyFromPackage(pkg);
+  const existing = readProjectFile(key);
+  const existingChars = new Map((existing?.characters || []).map((c) => [c.id, c]));
+
+  const characters = (Array.isArray(pkg.characters) ? pkg.characters : []).map((c) => ({
+    ...c,
+    referenceImages: existingChars.get(c.id)?.referenceImages || [],
+  }));
+
+  const project = {
+    schemaVersion: pkg.schemaVersion || "1.0",
+    project: {
+      id: pkg.project.id,
+      name: pkg.project.name || pkg.project.id,
+      medium: pkg.project.medium || "vertical",
+      createdAt: existing?.project?.createdAt || pkg.project.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    episode: pkg.episode || "",
+    style: pkg.style && typeof pkg.style === "object" ? pkg.style : { lockPhrase: "", globalNegative: "" },
+    defaults: { size: "2160x3840", model: ENV_OPENAI_IMAGE_MODEL, attachCharacterRefs: true, ...(pkg.defaults || {}) },
+    characters,
+    shots: pkg.shots,
+    renders: existing?.renders || [],
+  };
+
+  writeProjectFile(key, project);
+  return { key, project, summary: projectSummary(key, project) };
+}
+
+async function addProjectCharacterRef(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const charId = String(input.characterId || "");
+  const character = (project.characters || []).find((c) => c.id === charId);
+  if (!character) {
+    throw httpError(404, "角色不存在。");
+  }
+
+  const resolved = await resolveReferenceImage({ dataUrl: input.dataUrl, url: input.url });
+  if (!resolved) {
+    throw httpError(400, "参考图读取失败。");
+  }
+
+  const dir = path.join(projectDirFor(key), "characters", projectSlug(charId));
+  fs.mkdirSync(dir, { recursive: true });
+  const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+  const extension = extensionFromMime(resolved.mimeType, "png");
+  const fileName = `ref-${String(refs.length + 1).padStart(2, "0")}.${extension}`;
+  fs.writeFileSync(path.join(dir, fileName), resolved.buffer);
+
+  const url = `/outputs/_projects/${key}/characters/${projectSlug(charId)}/${fileName}`;
+  const refImage = {
+    id: `${charId}-${Date.now()}`,
+    file: url,
+    role: String(input.role || "base"),
+    locked: refs.length === 0 ? true : Boolean(input.locked),
+    createdAt: new Date().toISOString(),
+  };
+  character.referenceImages = (refImage.locked ? refs.map((r) => ({ ...r, locked: false })) : refs).concat(refImage);
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+// 用角色外貌锚点 + 全局画风生成「基准图候选」，存进 character.baseCandidates，
+// 用户挑一张后再走 addProjectCharacterRef 落盘锁定。
+async function generateCharacterBase(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const charId = String(input.characterId || "");
+  const character = (project.characters || []).find((c) => c.id === charId);
+  if (!character) {
+    throw httpError(404, "角色不存在。");
+  }
+  const lock = character.appearance?.imageLockPhrase || character.name;
+  if (!lock) {
+    throw httpError(400, "这个角色没有外貌锚点，没法生成基准图。");
+  }
+
+  const promptParts = [lock, project.style?.lockPhrase, "角色参考图，清晰正面半身，背景简洁干净，统一画风，单人"].filter(Boolean);
+  const result = await generateImages({
+    prompt: promptParts.join("。"),
+    negativePrompt: project.style?.globalNegative || "",
+    model: project.defaults?.model,
+    size: project.defaults?.size || "auto",
+    quality: "high",
+    count: clampInteger(input.count, 1, 4, 2),
+    outputFormat: "png",
+    background: "auto",
+    referenceImages: [],
+  });
+
+  character.baseCandidates = [
+    ...result.images.map((img) => img.url),
+    ...(Array.isArray(character.baseCandidates) ? character.baseCandidates : []),
+  ].slice(0, 12);
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+async function generateProjectShot(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const shotId = String(input.shotId || "");
+  const shot = (project.shots || []).find((s) => s.shotId === shotId);
+  if (!shot) {
+    throw httpError(404, "分镜不存在。");
+  }
+  if (!shot.prompt) {
+    throw httpError(400, "这一镜没有提示词，请回上游（Scriptwriter）补。");
+  }
+
+  const referenceImages = [];
+  if (project.defaults?.attachCharacterRefs !== false) {
+    for (const cid of Array.isArray(shot.characterIds) ? shot.characterIds : []) {
+      const ch = (project.characters || []).find((c) => c.id === cid);
+      const refs = Array.isArray(ch?.referenceImages) ? ch.referenceImages : [];
+      const ref = refs.find((r) => r.locked) || refs[0];
+      if (ref?.file) {
+        referenceImages.push({ name: String(cid), url: ref.file, source: "project-character-reference" });
+      }
+    }
+  }
+
+  const result = await generateImages({
+    prompt: shot.prompt,
+    negativePrompt: shot.negative || project.style?.globalNegative || "",
+    model: project.defaults?.model,
+    size: project.defaults?.size || "auto",
+    quality: input.quality || "high",
+    count: clampInteger(input.count, 1, 4, 2),
+    outputFormat: "png",
+    background: "auto",
+    referenceImages,
+  });
+
+  const candidates = result.images.map((img) => ({
+    imageId: img.id,
+    file: img.url,
+    createdAt: result.createdAt,
+  }));
+  const renders = Array.isArray(project.renders) ? project.renders : [];
+  const index = renders.findIndex((r) => r.shotId === shotId);
+  const render = {
+    shotId,
+    status: "done",
+    candidates: [...candidates, ...(index >= 0 ? renders[index].candidates : [])].slice(0, 24),
+    chosenImageId: index >= 0 ? renders[index].chosenImageId : undefined,
+  };
+  if (index >= 0) {
+    renders[index] = render;
+  } else {
+    renders.push(render);
+  }
+  project.renders = renders;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, shotId, render, referencesAttached: referenceImages.length };
+}
+
+function chooseProjectRender(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const renders = Array.isArray(project.renders) ? project.renders : [];
+  const render = renders.find((r) => r.shotId === input.shotId);
+  if (!render) {
+    throw httpError(404, "这一镜还没有候选图。");
+  }
+  render.chosenImageId = input.imageId || undefined;
+  project.renders = renders;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, shotId: input.shotId, render };
+}
+
+// ---- 漫剧编辑层：手动增删改（分镜 / 角色 / 候选 / 参考图 / 空项目）----
+// 全部镜像 addProjectCharacterRef 的写法：getProject 载入 → 改对象 → writeProjectFile → 返回 { key, project }。
+
+function upsertProjectShot(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const patch = input.patch && typeof input.patch === "object" ? input.patch : {};
+  const shots = Array.isArray(project.shots) ? project.shots : [];
+  const targetId = String(input.shotId || patch.shotId || "");
+  const existing = targetId ? shots.find((s) => s.shotId === targetId) : null;
+  const cleanIds = Array.isArray(patch.characterIds)
+    ? patch.characterIds.map((c) => String(c)).filter(Boolean)
+    : undefined;
+
+  if (existing) {
+    if (patch.prompt != null) existing.prompt = String(patch.prompt);
+    if (patch.negative != null) existing.negative = String(patch.negative);
+    if (patch.shotType != null) existing.shotType = String(patch.shotType);
+    if (patch.scene != null) existing.scene = String(patch.scene);
+    if (cleanIds) existing.characterIds = cleanIds;
+    // 改镜号：同步 renders 的 shotId
+    const nextId = patch.shotId != null ? String(patch.shotId).trim() : existing.shotId;
+    if (nextId && nextId !== existing.shotId) {
+      if (shots.some((s) => s !== existing && s.shotId === nextId)) {
+        throw httpError(409, "已有同名镜号，换一个。");
+      }
+      const r = (Array.isArray(project.renders) ? project.renders : []).find((x) => x.shotId === existing.shotId);
+      if (r) r.shotId = nextId;
+      existing.shotId = nextId;
+    }
+  } else {
+    const newId = targetId || `手动-${Date.now()}`;
+    if (shots.some((s) => s.shotId === newId)) {
+      throw httpError(409, "已有同名镜号，换一个。");
+    }
+    shots.push({
+      shotId: newId,
+      prompt: patch.prompt != null ? String(patch.prompt) : "",
+      negative: patch.negative != null ? String(patch.negative) : "",
+      shotType: patch.shotType != null ? String(patch.shotType) : "",
+      scene: patch.scene != null ? String(patch.scene) : "",
+      characterIds: cleanIds || [],
+    });
+  }
+  project.shots = shots;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function deleteProjectShot(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const shotId = String(input.shotId || "");
+  project.shots = (Array.isArray(project.shots) ? project.shots : []).filter((s) => s.shotId !== shotId);
+  project.renders = (Array.isArray(project.renders) ? project.renders : []).filter((r) => r.shotId !== shotId);
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function upsertProjectCharacter(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const chars = Array.isArray(project.characters) ? project.characters : [];
+  const targetId = String(input.characterId || "");
+  const existing = targetId ? chars.find((c) => c.id === targetId) : null;
+
+  if (existing) {
+    if (input.name != null) existing.name = String(input.name);
+    if (input.role != null) existing.role = String(input.role);
+    if (input.imageLockPhrase != null) {
+      existing.appearance = { ...(existing.appearance || {}), imageLockPhrase: String(input.imageLockPhrase) };
+    }
+  } else {
+    const name = String(input.name || "").trim();
+    if (!name) throw httpError(400, "角色需要一个名字。");
+    const id = chars.some((c) => c.id === name) ? `${name}-${Date.now()}` : name;
+    chars.push({
+      id,
+      name,
+      role: String(input.role || ""),
+      appearance: { imageLockPhrase: String(input.imageLockPhrase || "") },
+      referenceImages: [],
+    });
+  }
+  project.characters = chars;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function deleteProjectCharacter(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const charId = String(input.characterId || "");
+  project.characters = (Array.isArray(project.characters) ? project.characters : []).filter((c) => c.id !== charId);
+  // 删磁盘上的参考图目录
+  try {
+    const dir = path.join(projectDirFor(key), "characters", projectSlug(charId));
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // 目录删不掉不阻断
+  }
+  // 从所有分镜里剔除该角色
+  for (const s of Array.isArray(project.shots) ? project.shots : []) {
+    if (Array.isArray(s.characterIds)) s.characterIds = s.characterIds.filter((c) => c !== charId);
+  }
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function deleteProjectCharacterRef(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const charId = String(input.characterId || "");
+  const refId = String(input.refId || "");
+  const character = (project.characters || []).find((c) => c.id === charId);
+  if (!character) throw httpError(404, "角色不存在。");
+  const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+  const target = refs.find((r) => r.id === refId);
+  if (target?.file) {
+    const disk = resolveOutputUrl(target.file);
+    if (disk) {
+      try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+    }
+  }
+  let remaining = refs.filter((r) => r.id !== refId);
+  // 删掉的是锚点 → 把剩下的第一张补成锚点
+  if (target?.locked && remaining.length && !remaining.some((r) => r.locked)) {
+    remaining = remaining.map((r, i) => ({ ...r, locked: i === 0 }));
+  }
+  character.referenceImages = remaining;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function lockProjectCharacterRef(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const charId = String(input.characterId || "");
+  const refId = String(input.refId || "");
+  const character = (project.characters || []).find((c) => c.id === charId);
+  if (!character) throw httpError(404, "角色不存在。");
+  const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+  if (!refs.some((r) => r.id === refId)) throw httpError(404, "参考图不存在。");
+  character.referenceImages = refs.map((r) => ({ ...r, locked: r.id === refId }));
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, project };
+}
+
+function deleteProjectCandidate(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const shotId = String(input.shotId || "");
+  const imageId = String(input.imageId || "");
+  const renders = Array.isArray(project.renders) ? project.renders : [];
+  const render = renders.find((r) => r.shotId === shotId);
+  if (!render) throw httpError(404, "这一镜还没有候选图。");
+  const target = (render.candidates || []).find((c) => c.imageId === imageId);
+  if (target?.file) {
+    const disk = resolveOutputUrl(target.file);
+    if (disk) {
+      try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+    }
+  }
+  render.candidates = (render.candidates || []).filter((c) => c.imageId !== imageId);
+  if (render.chosenImageId === imageId) render.chosenImageId = undefined;
+  project.renders = renders;
+  project.project.updatedAt = new Date().toISOString();
+  writeProjectFile(key, project);
+  return { key, shotId, render };
+}
+
+function createEmptyProject(input) {
+  const name = String(input.name || "").trim();
+  if (!name) throw httpError(400, "项目需要一个名字。");
+  const episode = String(input.episode || "").trim();
+  const key = projectKeyFromPackage({ project: { id: name, name }, episode });
+  if (readProjectFile(key)) {
+    throw httpError(409, "已有同名同集的项目，换个名字，或直接在列表里选它。");
+  }
+  const now = new Date().toISOString();
+  const project = {
+    schemaVersion: "1.0",
+    project: { id: name, name, medium: "vertical", createdAt: now, updatedAt: now },
+    episode,
+    style: { lockPhrase: "", globalNegative: "" },
+    defaults: { size: "2160x3840", model: ENV_OPENAI_IMAGE_MODEL, attachCharacterRefs: true },
+    characters: [],
+    shots: [],
+    renders: [],
+  };
+  writeProjectFile(key, project);
+  return { key, project, summary: projectSummary(key, project) };
+}
+
+// 按集导出：把每镜的定稿按分镜顺序复制成编号文件 + manifest.json
+function exportProject(input) {
+  const { project } = getProject(input.key);
+  const key = projectSlug(input.key);
+  const exportDir = path.join(projectDirFor(key), "export");
+  fs.rmSync(exportDir, { recursive: true, force: true });
+  fs.mkdirSync(exportDir, { recursive: true });
+
+  const renders = new Map((Array.isArray(project.renders) ? project.renders : []).map((r) => [r.shotId, r]));
+  const files = [];
+  const missing = [];
+  let index = 0;
+  for (const shot of Array.isArray(project.shots) ? project.shots : []) {
+    const render = renders.get(shot.shotId);
+    const chosen = render && render.chosenImageId
+      ? (render.candidates || []).find((c) => c.imageId === render.chosenImageId)
+      : null;
+    const src = chosen?.file ? resolveOutputUrl(chosen.file) : null;
+    if (!src) {
+      missing.push(shot.shotId);
+      continue;
+    }
+    index += 1;
+    const ext = path.extname(src) || ".png";
+    const name = `${String(index).padStart(3, "0")}_${shot.shotId.replace(/[^a-zA-Z0-9_-]/g, "-")}${ext}`;
+    fs.copyFileSync(src, path.join(exportDir, name));
+    files.push({ shotId: shot.shotId, file: name });
+  }
+
+  const manifest = {
+    project: project.project?.name || key,
+    episode: project.episode || "",
+    exportedAt: new Date().toISOString(),
+    order: files,
+    missing,
+  };
+  fs.writeFileSync(path.join(exportDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+  return { key, exportDir, count: files.length, missing, files };
+}
+
+// 用系统文件管理器打开导出目录（后端和用户同机，web/桌面都适用）。
+function openProjectExportFolder(input) {
+  const key = projectSlug(input.key);
+  const dir = path.join(projectDirFor(key), "export");
+  if (!fs.existsSync(dir)) {
+    throw httpError(404, "还没有导出目录，先点「导出本集」。");
+  }
+  const { execFile } = require("node:child_process");
+  const command = process.platform === "win32"
+    ? "explorer"
+    : process.platform === "darwin"
+      ? "open"
+      : "xdg-open";
+  // explorer 成功也常返回非 0，忽略回调错误。
+  execFile(command, [dir], () => {});
+  return { ok: true, dir };
+}
+
 function startServer(port = PORT, onStarted) {
+  try {
+    migrateStyleReferenceImagesToDisk();
+  } catch (error) {
+    logError(error, "style-reference migration");
+  }
   const listener = server.listen(port, () => {
     const address = listener.address();
     const actualPort = typeof address === "object" && address ? address.port : port;
@@ -298,9 +913,11 @@ function getUpdateStatusPayload() {
       enabled: false,
       status: "disabled",
       reason: "desktop updater is unavailable",
+      version: APP_VERSION,
     };
   }
-  return updateController.getStatus();
+  const status = updateController.getStatus();
+  return { version: APP_VERSION, ...status };
 }
 
 async function checkForAppUpdates() {
@@ -2692,6 +3309,7 @@ function deleteRecentPrompt(id) {
 function saveSavedStyle(input) {
   const settings = ensureCollections(loadSettings());
   const item = normalizeSavedItem(input, "风格");
+  item.referenceImages = persistStyleReferenceImages(item.referenceImages, item.id);
   settings.savedStyles = upsertSavedItem(settings.savedStyles, item);
   writeSettings(settings);
   return settings;
@@ -3031,6 +3649,79 @@ function normalizeSavedReferenceImages(value) {
       source: String(reference?.source || "style-reference").slice(0, 80),
     }))
     .filter((reference) => reference.dataUrl || reference.url);
+}
+
+// Style reference images can be large (multi-image style extraction). Keep them
+// on disk under outputs/_style-references/<styleId>/ and store only a pointer in
+// api-profiles.json, instead of inlining megabytes of base64. The stored url is a
+// normal /outputs/ path, so resolveReferenceImage reads it back and still sends
+// these images as references whenever the style is used at high strength.
+function persistStyleReferenceImages(references, styleId) {
+  const list = Array.isArray(references) ? references.slice(0, 8) : [];
+  const safeId = normalizeSavedItemId(styleId) || makeSavedItemId();
+  const result = [];
+  list.forEach((reference, index) => {
+    const inlineParsed = typeof reference?.dataUrl === "string" && reference.dataUrl.startsWith("data:image/")
+      ? parseDataUrl(reference.dataUrl)
+      : null;
+
+    if (!inlineParsed) {
+      // Already on disk (or a remote url) — keep the pointer, drop any dataUrl.
+      if (typeof reference?.url === "string" && reference.url) {
+        result.push({
+          name: String(reference.name || `Style reference ${index + 1}`).slice(0, 120),
+          url: reference.url,
+          source: String(reference.source || "style-reference").slice(0, 80),
+        });
+      }
+      return;
+    }
+
+    const dir = path.join(styleReferenceDir, safeId);
+    fs.mkdirSync(dir, { recursive: true });
+    const extension = extensionFromMime(inlineParsed.mimeType, "png");
+    const fileName = `style-${String(index + 1).padStart(2, "0")}.${extension}`;
+    fs.writeFileSync(path.join(dir, fileName), Buffer.from(inlineParsed.base64, "base64"));
+    result.push({
+      name: String(reference.name || `Style reference ${index + 1}`).slice(0, 120),
+      url: `/outputs/_style-references/${safeId}/${fileName}`,
+      mimeType: inlineParsed.mimeType,
+      source: String(reference.source || "style-reference").slice(0, 80),
+    });
+  });
+  return result;
+}
+
+// One-time conversion for styles saved before reference images were moved to disk.
+function migrateStyleReferenceImagesToDisk() {
+  if (!fs.existsSync(settingsPath)) {
+    return;
+  }
+  let settings;
+  try {
+    settings = loadSettings();
+  } catch {
+    return;
+  }
+  if (!Array.isArray(settings.savedStyles) || settings.savedStyles.length === 0) {
+    return;
+  }
+  let changed = false;
+  settings.savedStyles = settings.savedStyles.map((style) => {
+    const refs = Array.isArray(style.referenceImages) ? style.referenceImages : [];
+    const hasInline = refs.some(
+      (ref) => typeof ref?.dataUrl === "string" && ref.dataUrl.startsWith("data:image/")
+    );
+    if (!hasInline) {
+      return style;
+    }
+    changed = true;
+    return { ...style, referenceImages: persistStyleReferenceImages(refs, style.id) };
+  });
+  if (changed) {
+    writeSettings(settings);
+    console.log("Moved saved-style reference images out of api-profiles.json onto disk.");
+  }
 }
 
 function normalizeSavedItemId(value) {

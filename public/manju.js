@@ -423,10 +423,6 @@ document.querySelector("#refreshAssetsButton")?.addEventListener("click", () => 
 document.querySelector("#continueButton")?.addEventListener("click", () => {
   setWorkspace("shots");
 });
-document.querySelector("#openLegacyButton")?.addEventListener("click", () => {
-  localStorage.setItem("yaotu-workbench-mode", "manju");
-  window.location.href = "/?mode=manju";
-});
 document.querySelector("#newProjectButton")?.addEventListener("click", () => {
   const title = window.prompt("新项目剧名", "");
   const normalized = normalizeTitle(title);

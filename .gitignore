@@ -15,3 +15,8 @@ IMG_*.png
 *.exe
 *.blockmap
 latest.yml
+.claude/
+.tmp-*
+*.tsbuildinfo
+app/vite.config.js
+app/vite.config.d.ts

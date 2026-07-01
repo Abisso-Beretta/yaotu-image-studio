@@ -61,33 +61,6 @@ textarea {
   gap: 10px;
 }
 
-.mode-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.mode-button {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.mode-button.active {
-  background: rgba(22, 116, 90, 0.12);
-  color: var(--accent-dark);
-}
-
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent-dark);
@@ -227,8 +200,7 @@ input:focus {
 .reference-panel,
 .analysis-upload-panel,
 .prompt-tool-panel,
-.prompt-lexicon-panel,
-.manju-panel {
+.prompt-lexicon-panel {
   display: grid;
   gap: 10px;
 }
@@ -426,109 +398,6 @@ input:focus {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
-}
-
-.manju-panel {
-  padding: 12px;
-  border: 1px solid rgba(22, 116, 90, 0.22);
-  border-radius: 8px;
-  background: rgba(22, 116, 90, 0.06);
-}
-
-.manju-panel[hidden] {
-  display: none;
-}
-
-.manju-panel textarea {
-  min-height: 92px;
-}
-
-.manju-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid rgba(22, 116, 90, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.64);
-}
-
-.manju-tab {
-  min-height: 34px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 850;
-}
-
-.manju-tab.active {
-  background: rgba(22, 116, 90, 0.12);
-  color: var(--accent-dark);
-}
-
-.manju-tab-panel {
-  display: grid;
-  gap: 10px;
-}
-
-.manju-tab-panel[hidden] {
-  display: none;
-}
-
-.manju-character-panel {
-  display: grid;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid rgba(22, 116, 90, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.46);
-}
-
-.manju-pack-row,
-.manju-character-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 8px;
-  align-items: end;
-  padding: 10px;
-  border: 1px solid rgba(22, 116, 90, 0.18);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.58);
-}
-
-.manju-character-row {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-
-.manju-character-row .field {
-  grid-column: 1 / -1;
-}
-
-.manju-character-row .ghost-button {
-  min-width: 0;
-  padding-inline: 10px;
-}
-
-.character-fields {
-  margin: 0;
-}
-
-#manjuFormula {
-  min-height: 168px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-  font-size: 12px;
-}
-
-.manju-actions {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .preset-grid {
@@ -1207,7 +1076,6 @@ input[type="range"] {
   display: none;
 }
 
-.manju-mode .archive-actions,
 .shot-queue-mode .archive-actions {
   display: grid;
   gap: 8px;
@@ -1727,16 +1595,9 @@ input[type="range"] {
   .thumb-actions,
   .saved-card div,
   .quick-config-bar,
-  .manju-pack-row,
-  .manju-character-row,
-  .manju-actions,
   .post-row,
   .archive-controls {
     grid-template-columns: 1fr;
-  }
-
-  .mode-switch {
-    width: 100%;
   }
 
   .gallery-tools,
