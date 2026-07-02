@@ -1,35 +1,34 @@
 import { create } from 'zustand'
+import { api } from '@/lib/api'
 
 export type BackgroundTheme = 'none' | 'white' | 'pink' | 'purple' | 'green' | 'black'
 
-const STORAGE_KEY = 'yaotu.backgroundTheme'
 const THEMES: BackgroundTheme[] = ['none', 'white', 'pink', 'purple', 'green', 'black']
-
-function loadInitialTheme(): BackgroundTheme {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    if (stored && (THEMES as string[]).includes(stored)) {
-      return stored as BackgroundTheme
-    }
-  } catch {
-    // localStorage 不可用（隐私模式等）就用默认值
-  }
-  return 'black'
-}
 
 interface ThemeState {
   backgroundTheme: BackgroundTheme
+  loadTheme: () => Promise<void>
   setBackgroundTheme: (theme: BackgroundTheme) => void
 }
 
+// 主题背景偏好落盘在后端（见 server.js /api/ui-prefs），不用 localStorage：
+// 桌面版每次启动的端口是随机分配的，localStorage 按源（含端口）隔离，端口一变旧值就读不到了。
 export const useTheme = create<ThemeState>((set) => ({
-  backgroundTheme: loadInitialTheme(),
-  setBackgroundTheme: (theme) => {
+  backgroundTheme: 'black',
+  loadTheme: async () => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, theme)
+      const prefs = await api.getUiPrefs()
+      if (prefs.backgroundTheme && (THEMES as string[]).includes(prefs.backgroundTheme)) {
+        set({ backgroundTheme: prefs.backgroundTheme as BackgroundTheme })
+      }
     } catch {
-      // 忽略写入失败
+      // 读不到就用默认值，不阻塞界面
     }
+  },
+  setBackgroundTheme: (theme) => {
     set({ backgroundTheme: theme })
+    api.setUiPrefs({ backgroundTheme: theme }).catch(() => {
+      // 保存失败不影响当前这次切换的观感，下次启动可能会回退默认值
+    })
   },
 }))

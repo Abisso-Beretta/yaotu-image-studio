@@ -11,6 +11,7 @@ const styleReferenceDir = path.join(outputDir, "_style-references");
 const projectsDir = path.join(outputDir, "_projects");
 const envPath = path.join(dataDir, ".env");
 const settingsPath = path.join(dataDir, "api-profiles.json");
+const uiPrefsPath = path.join(dataDir, "ui-prefs.json");
 
 loadDotEnv(envPath);
 
@@ -126,6 +127,15 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const settings = deleteProfile(body.profileId || body.id);
       return sendJson(res, 200, sanitizeSettings(settings));
+    }
+
+    if (req.method === "GET" && requestUrl.pathname === "/api/ui-prefs") {
+      return sendJson(res, 200, readUiPrefs());
+    }
+
+    if (req.method === "POST" && requestUrl.pathname === "/api/ui-prefs") {
+      const body = await readJson(req);
+      return sendJson(res, 200, saveUiPrefs(body));
     }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/test-connection") {
@@ -3363,6 +3373,28 @@ function upsertRecentItem(items, item) {
 
 function writeSettings(settings) {
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), "utf8");
+}
+
+// 纯前端展示偏好（如主题背景）。桌面版每次启动端口都是随机分配的，
+// 浏览器 localStorage 按“源”（含端口）隔离，端口一变就读不到旧值，
+// 所以这类偏好落盘到后端，而不是存 localStorage。
+const BACKGROUND_THEMES = new Set(["none", "white", "pink", "purple", "green", "black"]);
+
+function readUiPrefs() {
+  try {
+    return JSON.parse(fs.readFileSync(uiPrefsPath, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveUiPrefs(patch = {}) {
+  const prefs = readUiPrefs();
+  if (Object.prototype.hasOwnProperty.call(patch, "backgroundTheme") && BACKGROUND_THEMES.has(patch.backgroundTheme)) {
+    prefs.backgroundTheme = patch.backgroundTheme;
+  }
+  fs.writeFileSync(uiPrefsPath, JSON.stringify(prefs, null, 2), "utf8");
+  return prefs;
 }
 
 function getActiveApiConfig() {

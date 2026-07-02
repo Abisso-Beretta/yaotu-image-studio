@@ -68,12 +68,14 @@ export default function App() {
   const openSettings = useGenerator((s) => s.openSettings)
   const version = useGenerator((s) => s.config?.version)
   const backgroundTheme = useTheme((s) => s.backgroundTheme)
+  const loadTheme = useTheme((s) => s.loadTheme)
   const [view, setView] = useState<View>('generate')
 
   useEffect(() => {
     loadConfig()
     loadGallery(1)
-  }, [loadConfig, loadGallery])
+    loadTheme()
+  }, [loadConfig, loadGallery, loadTheme])
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = backgroundTheme

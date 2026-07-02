@@ -1,5 +1,6 @@
 .env
 api-profiles.json
+ui-prefs.json
 outputs/
 node_modules/
 .tools/

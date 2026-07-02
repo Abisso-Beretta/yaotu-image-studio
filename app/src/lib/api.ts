@@ -187,6 +187,13 @@ export const api = {
   getUpdateStatus: () => jsonFetch<UpdateStatus>('/api/update/status'),
 
   checkUpdate: () => postJson<UpdateStatus>('/api/update/check', {}),
+
+  // 纯前端展示偏好（如主题背景）。桌面版每次启动端口随机分配，localStorage 按源隔离会失效，
+  // 所以落盘到后端而不是浏览器本地存储。
+  getUiPrefs: () => jsonFetch<{ backgroundTheme?: string }>('/api/ui-prefs'),
+
+  setUiPrefs: (patch: { backgroundTheme?: string }) =>
+    postJson<{ backgroundTheme?: string }>('/api/ui-prefs', patch),
 }
 
 export function fileToDataUrl(file: File): Promise<string> {

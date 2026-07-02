@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useGenerator, composePrompt } from '@/store/generator'
 import { builtInStylePresets, promptLexiconGroups, purposePresets } from '@/data/presets'
+import Lightbox from '@/components/Lightbox'
 import type { GeneratedImage } from '@/types'
 
 const SIZES = [
@@ -20,20 +21,20 @@ function Label({ children }: { children: React.ReactNode }) {
   return <span className="block text-xs text-neutral-400 mb-1">{children}</span>
 }
 
-function ImageCard({ img }: { img: GeneratedImage }) {
+function ImageCard({ img, onOpen }: { img: GeneratedImage; onOpen: () => void }) {
   const addRefFromImage = useGenerator((s) => s.addRefFromImage)
   const deleteImage = useGenerator((s) => s.deleteImage)
   const reroll = useGenerator((s) => s.reroll)
   return (
     <figure className="group relative rounded-lg overflow-hidden border border-line bg-panel">
-      <a href={img.url} target="_blank" rel="noreferrer">
+      <button onClick={onOpen} className="block w-full">
         <img
           src={img.url}
           alt={img.prompt || img.id}
           loading="lazy"
           className="w-full aspect-[3/4] object-cover"
         />
-      </a>
+      </button>
       <figcaption className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1 p-1.5 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition">
         <button
           className="text-[11px] px-2 py-1 rounded bg-accent hover:bg-accent-soft text-white"
@@ -106,6 +107,7 @@ export default function Generator() {
   const [lexCat, setLexCat] = useState(promptLexiconGroups[0]?.id || '')
   const [showPreview, setShowPreview] = useState(false)
   const [styleStrength, setStyleStrength] = useState('high')
+  const [lightbox, setLightbox] = useState<{ images: GeneratedImage[]; index: number } | null>(null)
 
   const canGenerate = !generating && form.prompt.trim().length > 0
   const showCompression = form.outputFormat === 'jpeg' || form.outputFormat === 'webp'
@@ -605,8 +607,8 @@ export default function Generator() {
           <div>
             <h2 className="text-sm font-semibold text-neutral-300 mb-2">本次生成</h2>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {lastBatch.map((img) => (
-                <ImageCard key={img.id} img={img} />
+              {lastBatch.map((img, i) => (
+                <ImageCard key={img.id} img={img} onOpen={() => setLightbox({ images: lastBatch, index: i })} />
               ))}
             </div>
           </div>
@@ -643,13 +645,21 @@ export default function Generator() {
             </p>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {gallery.map((img) => (
-                <ImageCard key={img.id} img={img} />
+              {gallery.map((img, i) => (
+                <ImageCard key={img.id} img={img} onOpen={() => setLightbox({ images: gallery, index: i })} />
               ))}
             </div>
           )}
         </div>
       </section>
+      {lightbox && (
+        <Lightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onIndexChange={(index) => setLightbox({ ...lightbox, index })}
+          onClose={() => setLightbox(null)}
+        />
+      )}
     </div>
   )
 }
