@@ -30,6 +30,7 @@
     "appId": "local.yaotu.workbench",
     "productName": "妖荼",
     "directories": {
+      "app": ".",
       "output": "dist"
     },
     "files": [
