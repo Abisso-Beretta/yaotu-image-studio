@@ -15,6 +15,7 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
   const [scale, setScale] = useState(1)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
+  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const dragStart = useRef({ x: 0, y: 0 })
   const img = images[index]
   const canPrev = index > 0
@@ -23,6 +24,7 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
   useEffect(() => {
     setScale(1)
     setOffset({ x: 0, y: 0 })
+    setNaturalSize(null)
   }, [index])
 
   useEffect(() => {
@@ -66,6 +68,18 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
         })
       }}
     >
+      <a
+        href={img.url}
+        download={img.url.split('/').pop() || undefined}
+        onClick={(e) => e.stopPropagation()}
+        title="下载原图"
+        className="absolute top-4 right-16 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </a>
+
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -107,6 +121,10 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
         alt={img.prompt || img.id}
         draggable={false}
         onClick={(e) => e.stopPropagation()}
+        onLoad={(e) => {
+          const el = e.currentTarget
+          setNaturalSize({ w: el.naturalWidth, h: el.naturalHeight })
+        }}
         onMouseDown={(e) => {
           e.stopPropagation()
           if (scale <= MIN_SCALE) return
@@ -123,6 +141,12 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
 
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs text-neutral-300 bg-black/50 px-3 py-1.5 rounded-full">
         {index + 1} / {images.length}
+        {naturalSize && (
+          <span className="text-neutral-500">
+            {' '}
+            · {naturalSize.w}×{naturalSize.h}
+          </span>
+        )}
       </div>
     </div>
   )

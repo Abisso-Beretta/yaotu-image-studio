@@ -200,6 +200,12 @@ interface GeneratorState {
   removeProfile: (id: string) => Promise<void>
   testConnection: (input: { profileId?: string; apiKey?: string; baseUrl?: string }) => Promise<void>
 
+  // 出图模型（测试连接只报数量，这里拉具体模型名供下拉选择）
+  imageModels: string[]
+  imageModelsBusy: boolean
+  imageModelsError: string | null
+  listImageModels: (input: { profileId?: string; apiKey?: string; baseUrl?: string }) => Promise<void>
+
   // 辅助 API（优化/分析）
   auxModels: string[]
   auxModelsBusy: boolean
@@ -276,6 +282,10 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
   settingsOpen: false,
   settingsBusy: false,
   testResult: null,
+
+  imageModels: [],
+  imageModelsBusy: false,
+  imageModelsError: null,
 
   auxModels: [],
   auxModelsBusy: false,
@@ -638,6 +648,22 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       set({ testResult: { ok: false, error: (e as Error).message } })
     } finally {
       set({ settingsBusy: false })
+    }
+  },
+
+  listImageModels: async (input) => {
+    set({ imageModelsBusy: true, imageModelsError: null, imageModels: [] })
+    try {
+      const r = await api.listImageModels(input)
+      if (r.ok) {
+        set({ imageModels: r.models })
+      } else {
+        set({ imageModelsError: r.error || '拉取模型失败', imageModels: [] })
+      }
+    } catch (e) {
+      set({ imageModelsError: (e as Error).message })
+    } finally {
+      set({ imageModelsBusy: false })
     }
   },
 

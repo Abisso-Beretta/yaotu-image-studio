@@ -70,6 +70,9 @@ export const api = {
   testConnection: (body: { profileId?: string; apiKey?: string; baseUrl?: string }) =>
     postJson<TestResult>('/api/test-connection', body),
 
+  listImageModels: (body: { profileId?: string; apiKey?: string; baseUrl?: string }) =>
+    postJson<AuxiliaryModelsResult>('/api/image-models', body),
+
   // 漫剧项目
   listProjects: () => jsonFetch<{ projects: ProjectSummary[] }>('/api/projects'),
 

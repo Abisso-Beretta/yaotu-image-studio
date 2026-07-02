@@ -335,6 +335,10 @@ export default function SettingsModal() {
     setActiveProfile,
     removeProfile,
     testConnection,
+    imageModels,
+    imageModelsBusy,
+    imageModelsError,
+    listImageModels,
   } = useGenerator()
 
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -442,31 +446,61 @@ export default function SettingsModal() {
               placeholder="https://api.openai.com"
             />
           </label>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="block text-xs text-neutral-400 mb-1">出图模型</span>
+          <label className="block">
+            <span className="block text-xs text-neutral-400 mb-1">出图模型</span>
+            <div className="flex gap-2">
               <input
-                className="w-full"
+                className="flex-1"
                 value={form.imageModel}
                 onChange={(e) => patch({ imageModel: e.target.value })}
                 placeholder="gpt-image-2"
               />
-            </label>
-            <label className="block">
-              <span className="block text-xs text-neutral-400 mb-1">生图接口</span>
-              <select
-                className="w-full"
-                value={form.endpointMode}
-                onChange={(e) => patch({ endpointMode: e.target.value })}
+              <button
+                disabled={imageModelsBusy}
+                onClick={() =>
+                  listImageModels({
+                    profileId: form.profileId,
+                    apiKey: form.apiKey || undefined,
+                    baseUrl: form.baseUrl,
+                  })
+                }
+                className="px-3 py-2 rounded-lg border border-line text-sm text-neutral-200 hover:border-accent-soft disabled:opacity-40 whitespace-nowrap"
               >
-                {ENDPOINT_MODES.map((m) => (
-                  <option key={m.v} value={m.v}>
-                    {m.label}
+                {imageModelsBusy ? '拉取中…' : '拉取模型'}
+              </button>
+            </div>
+            {imageModels.length > 0 && (
+              <select
+                className="w-full mt-2"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) patch({ imageModel: e.target.value })
+                }}
+              >
+                <option value="">— 从拉取结果选择（共 {imageModels.length} 个）—</option>
+                {imageModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
                   </option>
                 ))}
               </select>
-            </label>
-          </div>
+            )}
+            {imageModelsError && <p className="text-[11px] text-red-400 mt-1">{imageModelsError}</p>}
+          </label>
+          <label className="block">
+            <span className="block text-xs text-neutral-400 mb-1">生图接口</span>
+            <select
+              className="w-full"
+              value={form.endpointMode}
+              onChange={(e) => patch({ endpointMode: e.target.value })}
+            >
+              {ENDPOINT_MODES.map((m) => (
+                <option key={m.v} value={m.v}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {/* 测试结果 */}
