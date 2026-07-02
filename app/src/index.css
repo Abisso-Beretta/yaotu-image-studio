@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* accent 默认值（墨绿），tailwind.config.js 里 accent/accent-soft 都读这两个变量 */
+  --accent-rgb: 22 116 90;
+  --accent-soft-rgb: 31 143 112;
+}
+
 @layer base {
   html,
   body,
@@ -22,4 +28,88 @@
   select:focus {
     @apply border-accent-soft;
   }
+}
+
+/* 浅色主题背景（白/粉/紫/绿）时，把功能区的深色语汇换成暖白纸感配色；
+   黑金主题 / 关闭背景 时不受影响，维持原有深色 UI。 */
+html[data-theme='white'] .bg-ink,
+html[data-theme='pink'] .bg-ink,
+html[data-theme='purple'] .bg-ink,
+html[data-theme='green'] .bg-ink {
+  background-color: #ffffff;
+}
+html[data-theme='white'] .bg-ink\/45,
+html[data-theme='pink'] .bg-ink\/45,
+html[data-theme='purple'] .bg-ink\/45,
+html[data-theme='green'] .bg-ink\/45 {
+  background-color: rgb(255 255 255 / 0.45);
+}
+html[data-theme='white'] .bg-panel,
+html[data-theme='pink'] .bg-panel,
+html[data-theme='purple'] .bg-panel,
+html[data-theme='green'] .bg-panel {
+  background-color: #ffffff;
+}
+html[data-theme='white'] .border-line,
+html[data-theme='pink'] .border-line,
+html[data-theme='purple'] .border-line,
+html[data-theme='green'] .border-line {
+  border-color: #ddd6c5;
+}
+html[data-theme='white'] .text-neutral-100,
+html[data-theme='pink'] .text-neutral-100,
+html[data-theme='purple'] .text-neutral-100,
+html[data-theme='green'] .text-neutral-100 {
+  color: #23271f;
+}
+html[data-theme='white'] .text-neutral-200,
+html[data-theme='pink'] .text-neutral-200,
+html[data-theme='purple'] .text-neutral-200,
+html[data-theme='green'] .text-neutral-200 {
+  color: #2f342b;
+}
+html[data-theme='white'] .text-neutral-300,
+html[data-theme='pink'] .text-neutral-300,
+html[data-theme='purple'] .text-neutral-300,
+html[data-theme='green'] .text-neutral-300 {
+  color: #454b3f;
+}
+html[data-theme='white'] .text-neutral-400,
+html[data-theme='pink'] .text-neutral-400,
+html[data-theme='purple'] .text-neutral-400,
+html[data-theme='green'] .text-neutral-400 {
+  color: #6b7261;
+}
+html[data-theme='white'] .text-neutral-500,
+html[data-theme='pink'] .text-neutral-500,
+html[data-theme='purple'] .text-neutral-500,
+html[data-theme='green'] .text-neutral-500 {
+  color: #8b9182;
+}
+html[data-theme='white'] .text-neutral-600,
+html[data-theme='pink'] .text-neutral-600,
+html[data-theme='purple'] .text-neutral-600,
+html[data-theme='green'] .text-neutral-600 {
+  color: #a6ac9c;
+}
+
+/* 按钮/强调色跟着主题背景走：每个主题一套呼应色调的 accent，
+   只需重定义 --accent-rgb / --accent-soft-rgb 这两个变量，
+   bg-accent / text-accent / border-accent-soft 等所有派生 class 自动生效。
+   绿主题本身就和默认墨绿很搭，黑金/关闭沿用默认值，都不用覆盖。 */
+html[data-theme='white'] {
+  --accent-rgb: 79 111 143;
+  --accent-soft-rgb: 106 144 179;
+}
+html[data-theme='pink'] {
+  --accent-rgb: 184 83 111;
+  --accent-soft-rgb: 209 115 143;
+}
+html[data-theme='purple'] {
+  --accent-rgb: 125 97 189;
+  --accent-soft-rgb: 154 128 210;
+}
+html[data-theme='black'] {
+  --accent-rgb: 147 113 31;
+  --accent-soft-rgb: 177 141 48;
 }
