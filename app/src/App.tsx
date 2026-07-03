@@ -4,6 +4,7 @@ import { useTheme, type BackgroundTheme } from '@/store/theme'
 import Generator from '@/screens/Generator'
 import Workbench from '@/screens/Workbench'
 import SettingsModal from '@/components/SettingsModal'
+import PromptDialogHost from '@/components/PromptDialog'
 
 const THEME_SWATCHES: Array<{ key: BackgroundTheme; label: string; swatch: string }> = [
   { key: 'white', label: '白', swatch: '#eef1f5' },
@@ -139,6 +140,7 @@ export default function App() {
         </main>
       </div>
       <SettingsModal />
+      <PromptDialogHost />
     </div>
   )
 }

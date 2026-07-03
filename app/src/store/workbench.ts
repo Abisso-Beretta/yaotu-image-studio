@@ -54,6 +54,7 @@ interface WorkbenchState {
   deleteCharacterRef: (characterId: string, refId: string) => Promise<void>
   lockCharacterRef: (characterId: string, refId: string) => Promise<void>
   deleteCandidate: (shotId: string, imageId: string) => Promise<void>
+  deleteBaseCandidate: (characterId: string, url: string) => Promise<void>
 }
 
 function applyRender(project: ImageProject | null, render: ProjectRender): ImageProject | null {
@@ -363,6 +364,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const { render } = await api.deleteCandidate({ key, shotId, imageId })
       set((s) => ({ current: applyRender(s.current, render) }))
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  deleteBaseCandidate: async (characterId, url) => {
+    const key = get().currentKey
+    if (!key) return
+    if (!window.confirm('删除这张候选图？')) return
+    try {
+      const { project } = await api.deleteCharacterBaseCandidate({ key, characterId, url })
+      set({ current: project })
     } catch (e) {
       set({ error: (e as Error).message })
     }

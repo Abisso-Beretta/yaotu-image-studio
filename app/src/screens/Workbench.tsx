@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useWorkbench } from '@/store/workbench'
+import { openPrompt, openPromptFields } from '@/components/PromptDialog'
 import type { ProjectCharacter, ProjectShot } from '@/types'
 
 function CharacterCard({ char }: { char: ProjectCharacter }) {
   const uploadCharacterRef = useWorkbench((s) => s.uploadCharacterRef)
   const generateCharacterBase = useWorkbench((s) => s.generateCharacterBase)
   const lockCandidate = useWorkbench((s) => s.lockCandidate)
+  const deleteBaseCandidate = useWorkbench((s) => s.deleteBaseCandidate)
   const deleteCharacterRef = useWorkbench((s) => s.deleteCharacterRef)
   const lockCharacterRef = useWorkbench((s) => s.lockCharacterRef)
   const upsertCharacter = useWorkbench((s) => s.upsertCharacter)
@@ -125,14 +127,25 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
           <p className="text-[11px] text-neutral-500 mb-1">基准图候选（点一张锁定）</p>
           <div className="grid grid-cols-4 gap-1.5">
             {candidates.map((url) => (
-              <button
-                key={url}
-                onClick={() => lockCandidate(char.id, url)}
-                title="锁定为基准图"
-                className="rounded overflow-hidden border-2 border-transparent hover:border-accent-soft"
-              >
-                <img src={url} alt="" className="w-full aspect-square object-cover" />
-              </button>
+              <div key={url} className="relative group">
+                <button
+                  onClick={() => lockCandidate(char.id, url)}
+                  title="锁定为基准图"
+                  className="block w-full rounded overflow-hidden border-2 border-transparent hover:border-accent-soft"
+                >
+                  <img src={url} alt="" className="w-full aspect-square object-cover" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    deleteBaseCandidate(char.id, url)
+                  }}
+                  title="删除这张候选"
+                  className="absolute top-0.5 right-0.5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
+                >
+                  ×
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -384,17 +397,22 @@ export default function Workbench() {
   const charsWithRef = current?.characters.filter((c) => (c.referenceImages || []).length).length || 0
   const chosen = current?.renders?.filter((r) => r.chosenImageId).length || 0
 
-  function newProject() {
-    const name = window.prompt('新项目名字（如：回声）')
-    if (!name) return
-    const episode = window.prompt('集号（可空，如 S01E01）') || ''
-    createProject(name, episode)
+  async function newProject() {
+    const values = await openPromptFields({
+      title: '新建空项目',
+      fields: [
+        { key: 'name', label: '项目名字', placeholder: '如：回声' },
+        { key: 'episode', label: '集号（可空）', defaultValue: 'S01E01' },
+      ],
+    })
+    if (!values || !values.name.trim()) return
+    createProject(values.name.trim(), values.episode.trim())
   }
   function addShot() {
     upsertShot({ prompt: '' })
   }
-  function addCharacter() {
-    const name = window.prompt('角色名')
+  async function addCharacter() {
+    const name = await openPrompt({ title: '添加角色', label: '角色名' })
     if (!name) return
     upsertCharacter({ name })
   }

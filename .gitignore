@@ -1,6 +1,7 @@
 .env
 api-profiles.json
 ui-prefs.json
+desktop-migration-state.json
 outputs/
 node_modules/
 .tools/

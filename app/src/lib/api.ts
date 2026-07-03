@@ -145,6 +145,9 @@ export const api = {
   deleteCandidate: (body: { key: string; shotId: string; imageId: string }) =>
     postJson<{ key: string; shotId: string; render: ProjectRender }>('/api/project/candidate/delete', body),
 
+  deleteCharacterBaseCandidate: (body: { key: string; characterId: string; url: string }) =>
+    postJson<{ key: string; project: ImageProject }>('/api/project/character-base-candidate/delete', body),
+
   optimizePrompt: (body: { prompt: string; negativePrompt?: string; mode: string }) =>
     postJson<OptimizeResult>('/api/optimize-prompt', body),
 

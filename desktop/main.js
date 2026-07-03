@@ -1,7 +1,30 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("node:path");
+const fs = require("node:fs");
 const { migrateLegacyData } = require("./migration");
 const { configureAutoUpdates } = require("./updater");
+
+/**
+ * 向上遍历最多 5 层，寻找含 server.js + package.json 的项目根目录。
+ * win-unpacked 构建放在 dist-installer/win-unpacked/ 下，向上两层即为项目根；
+ * 开发模式下 electron 二进制在 node_modules 深处，最多四层也能找到；
+ * NSIS 安装版安装到任意路径，找不到项目根，返回 null 后回退至 userData。
+ */
+function detectLocalProjectDataDir(exeDir) {
+  let dir = exeDir;
+  for (let i = 0; i < 5; i++) {
+    const parent = path.dirname(dir);
+    if (parent === dir) break; // 到达文件系统根
+    dir = parent;
+    if (
+      fs.existsSync(path.join(dir, "server.js")) &&
+      fs.existsSync(path.join(dir, "package.json"))
+    ) {
+      return dir;
+    }
+  }
+  return null;
+}
 
 let mainWindow = null;
 let appServer = null;
@@ -36,8 +59,17 @@ function createWindow(port) {
 }
 
 app.whenReady().then(() => {
-  const dataDir = app.getPath("userData");
+  // 优先用项目根目录当 dataDir，使桌面版与 start-generator.bat 共享同一份数据。
+  // 适用场景：win-unpacked 构建放在项目目录内的 dist-installer/win-unpacked/。
+  // 找不到项目根（NSIS 安装版安装到任意位置）则回退 userData。
+  const localProjectDir = detectLocalProjectDataDir(path.dirname(app.getPath("exe")));
+  const dataDir = localProjectDir || app.getPath("userData");
   process.env.YAOTU_DATA_DIR = dataDir;
+  if (localProjectDir) {
+    console.log(`[dataDir] Using local project root: ${dataDir}`);
+  } else {
+    console.log(`[dataDir] Using userData: ${dataDir}`);
+  }
   process.env.PORT = "0";
 
   const migrationReport = migrateLegacyData({

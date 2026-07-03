@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { useGenerator, composePrompt } from '@/store/generator'
 import { builtInStylePresets, promptLexiconGroups, purposePresets } from '@/data/presets'
 import Lightbox from '@/components/Lightbox'
+import { openPrompt } from '@/components/PromptDialog'
 import type { GeneratedImage } from '@/types'
 
 const SIZES = [
@@ -267,8 +268,12 @@ export default function Generator() {
           </summary>
           <div className="mt-2 space-y-3">
             <button
-              onClick={() => {
-                const name = window.prompt('给这条提示词起个名字：', form.prompt.trim().slice(0, 16))
+              onClick={async () => {
+                const name = await openPrompt({
+                  title: '收藏提示词',
+                  label: '给这条提示词起个名字',
+                  defaultValue: form.prompt.trim().slice(0, 16),
+                })
                 if (name !== null) savePromptItem(name)
               }}
               disabled={!form.prompt.trim()}
@@ -421,8 +426,11 @@ export default function Generator() {
                     <option value="high">高强度（带样图）</option>
                   </select>
                   <button
-                    onClick={() => {
-                      const name = window.prompt('给这个风格起个名字：', '')
+                    onClick={async () => {
+                      const name = await openPrompt({
+                        title: '存为风格',
+                        label: '给这个风格起个名字',
+                      })
                       if (name !== null) saveAnalysisAsStyle(name, styleStrength)
                     }}
                     className="text-[11px] px-2 py-1 rounded border border-line text-neutral-200 hover:border-accent-soft"
