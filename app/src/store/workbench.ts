@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { api, fileToDataUrl } from '@/lib/api'
+import { api, fileToDataUrl, isAbortError } from '@/lib/api'
 import type { ExportResult, ImageProject, ProjectRender, ProjectSummary } from '@/types'
 
 interface WorkbenchState {
@@ -25,8 +25,10 @@ interface WorkbenchState {
   openProject: (key: string) => Promise<void>
   uploadCharacterRef: (characterId: string, file: File) => Promise<void>
   generateCharacterBase: (characterId: string, count: number) => Promise<void>
+  cancelCharacterBase: (characterId: string) => void
   lockCandidate: (characterId: string, url: string) => Promise<void>
   generateShot: (shotId: string, count: number) => Promise<void>
+  cancelShot: (shotId: string) => void
   chooseCandidate: (shotId: string, imageId: string | undefined) => Promise<void>
   runBatch: (count: number) => Promise<void>
   stopBatch: () => void
@@ -35,6 +37,13 @@ interface WorkbenchState {
 
   // 编辑层
   createProject: (name: string, episode?: string) => Promise<void>
+  // 项目级设置（名称/集号/风格/默认参数）。返回是否保存成功，弹层用它决定要不要关闭。
+  updateSettings: (input: {
+    name?: string
+    episode?: string
+    style?: { lockPhrase?: string; globalNegative?: string }
+    defaults?: { size?: string; model?: string; attachCharacterRefs?: boolean }
+  }) => Promise<boolean>
   upsertShot: (patch: {
     shotId?: string
     prompt?: string
@@ -65,6 +74,16 @@ function applyRender(project: ImageProject | null, render: ProjectRender): Image
   else renders.push(render)
   return { ...project, renders }
 }
+
+// 进行中生成请求的 AbortController，按分镜/角色 id 索引。放模块级而不是 store state：
+// 它们不驱动渲染（busy 状态另有 shotBusy/charBusy），塞进 state 只会多触发无意义更新。
+const shotControllers = new Map<string, AbortController>()
+const charControllers = new Map<string, AbortController>()
+// 批量出图当前正在跑的那一镜的 controller——「停止」时一起 abort，立即生效。
+let batchController: AbortController | null = null
+
+// 取消提示统一文案：abort 只是前端不等了，服务端可能还在跑并计费。
+const CANCEL_NOTE = '（已中断等待；服务端可能仍在完成本次生成并计费，完成的图会正常落盘）'
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   projects: [],
@@ -146,15 +165,30 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   generateCharacterBase: async (characterId, count) => {
     const key = get().currentKey
     if (!key) return
+    const controller = new AbortController()
+    charControllers.set(characterId, controller)
     set((s) => ({ charBusy: { ...s.charBusy, [characterId]: true }, error: null, notice: null }))
     try {
-      const { project } = await api.generateCharacterBase({ key, characterId, count })
-      set({ current: project, notice: '基准图候选已生成，挑一张「锁定」。' })
+      const { project } = await api.generateCharacterBase({ key, characterId, count }, controller.signal)
+      // 生图期间可能切了项目：current 已经是别的项目，丢弃 UI 更新
+      //（服务端已正确落盘，切回来 openProject 就能看到）。
+      if (get().currentKey === key) {
+        set({ current: project, notice: '基准图候选已生成，挑一张「锁定」。' })
+      }
     } catch (e) {
-      set({ error: (e as Error).message })
+      if (isAbortError(e)) {
+        set({ notice: `已取消基准图生成${CANCEL_NOTE}。` })
+      } else {
+        set({ error: (e as Error).message })
+      }
     } finally {
+      if (charControllers.get(characterId) === controller) charControllers.delete(characterId)
       set((s) => ({ charBusy: { ...s.charBusy, [characterId]: false } }))
     }
+  },
+
+  cancelCharacterBase: (characterId) => {
+    charControllers.get(characterId)?.abort()
   },
 
   lockCandidate: async (characterId, url) => {
@@ -171,18 +205,36 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   generateShot: async (shotId, count) => {
     const key = get().currentKey
     if (!key) return
+    const controller = new AbortController()
+    shotControllers.set(shotId, controller)
     set((s) => ({ shotBusy: { ...s.shotBusy, [shotId]: true }, error: null, notice: null }))
     try {
-      const { render, referencesAttached } = await api.generateShot({ key, shotId, count })
-      set((s) => ({
-        current: applyRender(s.current, render),
-        notice: `分镜 ${shotId} 出图完成${referencesAttached ? `（挂了 ${referencesAttached} 张角色参考图）` : '（未挂参考图，先去人设库锁底图）'}。`,
-      }))
+      const { render, referencesAttached } = await api.generateShot(
+        { key, shotId, count },
+        controller.signal,
+      )
+      // 生图期间可能切了项目：把 A 项目的 render 合进 B 项目的 current 会串数据，
+      // 不一致就丢弃 UI 更新（服务端已正确落盘，切回来 openProject 就能看到）。
+      if (get().currentKey === key) {
+        set((s) => ({
+          current: applyRender(s.current, render),
+          notice: `分镜 ${shotId} 出图完成${referencesAttached ? `（挂了 ${referencesAttached} 张角色参考图）` : '（未挂参考图，先去人设库锁底图）'}。`,
+        }))
+      }
     } catch (e) {
-      set({ error: (e as Error).message })
+      if (isAbortError(e)) {
+        set({ notice: `已取消分镜 ${shotId} 出图${CANCEL_NOTE}。` })
+      } else {
+        set({ error: (e as Error).message })
+      }
     } finally {
+      if (shotControllers.get(shotId) === controller) shotControllers.delete(shotId)
       set((s) => ({ shotBusy: { ...s.shotBusy, [shotId]: false } }))
     }
+  },
+
+  cancelShot: (shotId) => {
+    shotControllers.get(shotId)?.abort()
   },
 
   chooseCandidate: async (shotId, imageId) => {
@@ -196,7 +248,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  stopBatch: () => set({ batchStop: true }),
+  stopBatch: () => {
+    // 立即生效：置停止位，同时 abort 正在跑的那一镜（不再等它完成）。
+    set({ batchStop: true })
+    batchController?.abort()
+  },
 
   runBatch: async (count) => {
     const { current, currentKey } = get()
@@ -218,30 +274,48 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       notice: null,
     })
     let done = 0
+    let aborted = false
     for (const shot of targets) {
-      if (get().batchStop) break
+      // 防御性：批量中项目下拉已禁用，理论上切不了项目；万一切了（如导入任务包）就停。
+      if (get().batchStop || get().currentKey !== currentKey) break
+      const controller = new AbortController()
+      batchController = controller
       set((s) => ({ shotBusy: { ...s.shotBusy, [shot.shotId]: true } }))
       try {
-        const { render } = await api.generateShot({ key: currentKey, shotId: shot.shotId, count })
+        const { render } = await api.generateShot(
+          { key: currentKey, shotId: shot.shotId, count },
+          controller.signal,
+        )
         done += 1
         set((s) => ({
-          current: applyRender(s.current, render),
+          // 生图期间切了项目就不把 A 项目的 render 合进 B 项目的 current（服务端已落盘）
+          ...(s.currentKey === currentKey ? { current: applyRender(s.current, render) } : {}),
           batchProgress: { done, total: targets.length },
           shotBusy: { ...s.shotBusy, [shot.shotId]: false },
         }))
       } catch (e) {
-        // 出错即停，避免在配置坏掉时连续烧钱
-        set((s) => ({
-          error: `分镜 ${shot.shotId} 出图失败，已停止：${(e as Error).message}`,
-          shotBusy: { ...s.shotBusy, [shot.shotId]: false },
-        }))
+        set((s) => ({ shotBusy: { ...s.shotBusy, [shot.shotId]: false } }))
+        if (isAbortError(e)) {
+          // 用户点了「停止」：不是错误，跳出循环走停止文案。
+          aborted = true
+        } else {
+          // 出错即停，避免在配置坏掉时连续烧钱
+          set({ error: `分镜 ${shot.shotId} 出图失败，已停止：${(e as Error).message}` })
+        }
         break
+      } finally {
+        if (batchController === controller) batchController = null
       }
     }
-    const stopped = get().batchStop
+    const stopped = get().batchStop || aborted
     set({
       batchRunning: false,
-      notice: get().error ? null : stopped ? `已停止，完成 ${done} 镜。` : `批量出图完成，共 ${done} 镜。`,
+      batchStop: false,
+      notice: get().error
+        ? null
+        : stopped
+          ? `已停止，完成 ${done} 镜${aborted ? `；当前镜已中断等待${CANCEL_NOTE}` : ''}。`
+          : `批量出图完成，共 ${done} 镜。`,
     })
   },
 
@@ -285,6 +359,24 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       await get().loadProjects()
     } catch (e) {
       set({ error: (e as Error).message })
+    }
+  },
+
+  updateSettings: async (input) => {
+    const key = get().currentKey
+    if (!key) return false
+    set({ error: null, notice: null })
+    try {
+      const { project } = await api.updateProjectSettings({ key, ...input })
+      if (get().currentKey === key) {
+        set({ current: project, notice: '项目设置已保存。' })
+      }
+      // 项目名/集号显示在顶栏下拉里，顺手刷新列表
+      await get().loadProjects()
+      return true
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
     }
   },
 

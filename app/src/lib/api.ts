@@ -18,11 +18,18 @@ import type {
   UpdateStatus,
 } from '@/types'
 
+// 主动取消（AbortController.abort）抛出的错误。调用方用它区分「用户取消」和真错误。
+export function isAbortError(e: unknown): boolean {
+  return (e as { name?: string } | null)?.name === 'AbortError'
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
     res = await fetch(url, init)
   } catch (e) {
+    // 用户主动取消：原样抛出，别伪装成「连不上后端」。
+    if (isAbortError(e)) throw e
     throw new Error('连不上本地服务，确认后端 server.js 已启动。')
   }
   const text = await res.text()
@@ -41,18 +48,20 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T
 }
 
-function postJson<T>(url: string, body: unknown): Promise<T> {
+function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return jsonFetch<T>(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   })
 }
 
 export const api = {
   getConfig: () => jsonFetch<AppConfig>('/api/config'),
 
-  generate: (body: GenerateParams) => postJson<GenerateResult>('/api/generate', body),
+  generate: (body: GenerateParams, signal?: AbortSignal) =>
+    postJson<GenerateResult>('/api/generate', body, signal),
 
   listImages: (page = 1, pageSize = 24) =>
     jsonFetch<ImagesPage>(`/api/images?page=${page}&pageSize=${pageSize}`),
@@ -88,13 +97,21 @@ export const api = {
   addCharacterRef: (body: { key: string; characterId: string; dataUrl?: string; url?: string }) =>
     postJson<{ key: string; project: ImageProject }>('/api/project/character-ref', body),
 
-  generateCharacterBase: (body: { key: string; characterId: string; count?: number }) =>
-    postJson<{ key: string; project: ImageProject }>('/api/project/generate-character-base', body),
+  generateCharacterBase: (
+    body: { key: string; characterId: string; count?: number },
+    signal?: AbortSignal,
+  ) =>
+    postJson<{ key: string; project: ImageProject }>(
+      '/api/project/generate-character-base',
+      body,
+      signal,
+    ),
 
-  generateShot: (body: { key: string; shotId: string; count?: number }) =>
+  generateShot: (body: { key: string; shotId: string; count?: number }, signal?: AbortSignal) =>
     postJson<{ key: string; shotId: string; render: ProjectRender; referencesAttached: number }>(
       '/api/project/generate-shot',
       body,
+      signal,
     ),
 
   chooseRender: (body: { key: string; shotId: string; imageId?: string }) =>
@@ -108,6 +125,14 @@ export const api = {
   // 漫剧编辑层：手动增删改
   createProject: (body: { name: string; episode?: string }) =>
     postJson<{ key: string; project: ImageProject; summary: ProjectSummary }>('/api/project/create', body),
+
+  updateProjectSettings: (body: {
+    key: string
+    name?: string
+    episode?: string
+    style?: { lockPhrase?: string; globalNegative?: string }
+    defaults?: { size?: string; model?: string; attachCharacterRefs?: boolean }
+  }) => postJson<{ key: string; project: ImageProject }>('/api/project/settings', body),
 
   upsertShot: (body: {
     key: string

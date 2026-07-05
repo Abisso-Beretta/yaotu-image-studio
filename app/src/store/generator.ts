@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { api, fileToDataUrl } from '@/lib/api'
+import { api, fileToDataUrl, isAbortError } from '@/lib/api'
 import { builtInStylePresets, purposePresets } from '@/data/presets'
 import type {
   AppConfig,
@@ -170,6 +170,7 @@ interface GeneratorState {
 
   loadConfig: () => Promise<void>
   generate: () => Promise<void>
+  cancelGenerate: () => void
   optimize: (mode: string) => Promise<void>
   reroll: (img: GeneratedImage) => void
   loadGallery: (page?: number) => Promise<void>
@@ -217,6 +218,10 @@ interface GeneratorState {
 }
 
 let refSeq = 0
+
+// 当前生成请求的 AbortController。放模块级而不是 store state：
+// 它不驱动任何渲染，塞进 state 只会多触发一次无意义的更新。
+let generateController: AbortController | null = null
 
 function pickCollections(s: AppSettings) {
   return {
@@ -321,6 +326,8 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       return
     }
     set({ generating: true, error: null, notice: null })
+    const controller = new AbortController()
+    generateController = controller
     const styleRefs = savedStyleReferences(form.style, savedStyles)
     const body: GenerateParams = {
       prompt: composePrompt(form, savedStyles),
@@ -343,7 +350,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       ],
     }
     try {
-      const result = await api.generate(body)
+      const result = await api.generate(body, controller.signal)
       set({
         lastBatch: result.images,
         notice: `已生成 ${result.images.length} 张，批次 ${result.batchId}。`,
@@ -360,10 +367,20 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
         /* ignore */
       }
     } catch (e) {
-      set({ error: (e as Error).message })
+      if (isAbortError(e)) {
+        // 用户主动取消：是 notice 不是 error。只是前端不等了，服务端可能还在跑。
+        set({ notice: '已取消：中断等待（服务端可能仍在完成本次生成并计费，完成的图刷新图库可见）。' })
+      } else {
+        set({ error: (e as Error).message })
+      }
     } finally {
+      if (generateController === controller) generateController = null
       set({ generating: false })
     }
+  },
+
+  cancelGenerate: () => {
+    generateController?.abort()
   },
 
   optimize: async (mode) => {
@@ -437,6 +454,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
   },
 
   deleteImage: async (id) => {
+    if (!window.confirm(`删除这张图？会直接删除磁盘上的文件（${id}），不可恢复。`)) return
     try {
       await api.deleteImages([id])
       set((s) => ({

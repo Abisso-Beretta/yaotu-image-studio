@@ -309,6 +309,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character-base-candidate/delete") {
       return sendJson(res, 200, projectResponseForApi(await deleteCharacterBaseCandidate(await readJson(req))));
     }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/settings") {
+      return sendJson(res, 200, projectResponseForApi(await updateProjectSettings(await readJson(req))));
+    }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/analyze-image") {
       const body = await readJson(req);
@@ -324,7 +327,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "GET" && requestUrl.pathname.startsWith("/outputs/")) {
       const relativePath = decodeURIComponent(requestUrl.pathname.replace(/^\/outputs\//, ""));
-      return serveFile(res, outputDir, relativePath);
+      return serveFile(res, outputDir, relativePath, outputsCacheControl(relativePath));
     }
 
     // 新版前端（Vite 构建产物）托管在 /studio，与旧页面并存。
@@ -1101,6 +1104,71 @@ function createEmptyProject(input) {
   });
 }
 
+// 项目级设置：项目名/集号/风格锁定句/通用负面/默认生图参数。
+// 浅合并：只更新 body 里传了的字段；style/defaults 内部也按字段合并，绝不整个替换。
+// name/episode 只改显示，不改 key（key 是磁盘目录名，改名不迁目录，避免丢图和断链）。
+function updateProjectSettings(input) {
+  const style = input.style && typeof input.style === "object" ? input.style : {};
+  const defaults = input.defaults && typeof input.defaults === "object" ? input.defaults : {};
+  // 所有校验放进队列之前做：任何一项非法直接 400，整次请求不落盘。
+  const nextName = input.name != null ? normalizeOptionalText(input.name, 120) : undefined;
+  const nextEpisode = input.episode != null ? normalizeOptionalText(input.episode, 60) : undefined;
+  const nextLockPhrase = style.lockPhrase != null ? normalizeOptionalText(style.lockPhrase, 4000) : undefined;
+  const nextGlobalNegative = style.globalNegative != null ? normalizeOptionalText(style.globalNegative, 4000) : undefined;
+  // size/model 空字符串 = 不改（前端表单整份提交，留空表示保持现状）。
+  const sizeText = defaults.size != null ? String(defaults.size).trim() : "";
+  const nextSize = sizeText ? validateProjectDefaultSize(sizeText) : undefined;
+  const modelText = defaults.model != null ? String(defaults.model).trim() : "";
+  const nextModel = modelText ? normalizeModelForEndpoint(modelText, "images") : undefined;
+  const nextAttach = defaults.attachCharacterRefs != null ? Boolean(defaults.attachCharacterRefs) : undefined;
+
+  return withProject(input.key, (project) => {
+    if (nextName) project.project.name = nextName; // 名字不能清空，空串跳过
+    if (nextEpisode !== undefined) project.episode = nextEpisode; // 集号可清空
+    const curStyle = project.style && typeof project.style === "object" ? project.style : {};
+    project.style = {
+      ...curStyle,
+      ...(nextLockPhrase !== undefined ? { lockPhrase: nextLockPhrase } : {}),
+      ...(nextGlobalNegative !== undefined ? { globalNegative: nextGlobalNegative } : {}),
+    };
+    const curDefaults = project.defaults && typeof project.defaults === "object" ? project.defaults : {};
+    project.defaults = {
+      ...curDefaults,
+      ...(nextSize !== undefined ? { size: nextSize } : {}),
+      ...(nextModel !== undefined ? { model: nextModel } : {}),
+      ...(nextAttach !== undefined ? { attachCharacterRefs: nextAttach } : {}),
+    };
+  });
+}
+
+// 项目默认尺寸校验。与 normalizeSize 的 gpt-image-2 分支同一套约束
+// （宽高均为 16 的倍数、单边 ≤3840、总像素 ≤8,294,400）；"auto" 也是合法值。
+function validateProjectDefaultSize(value) {
+  const size = String(value || "").trim().toLowerCase();
+  if (size === "auto") {
+    return size;
+  }
+  const match = size.match(/^(\d{2,4})x(\d{2,4})$/);
+  if (!match) {
+    throw httpError(400, "默认尺寸格式必须是 宽x高（如 2160x3840）或 auto。");
+  }
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width % 16 !== 0 || height % 16 !== 0) {
+    throw httpError(400, "gpt-image-2 要求宽和高都是 16 的倍数。");
+  }
+  if (width < GPT_IMAGE_2_MIN_SIDE || height < GPT_IMAGE_2_MIN_SIDE) {
+    throw httpError(400, "gpt-image-2 宽高至少 16 像素。");
+  }
+  if (width > GPT_IMAGE_2_MAX_SIDE || height > GPT_IMAGE_2_MAX_SIDE) {
+    throw httpError(400, "gpt-image-2 单边不能超过 3840 像素。");
+  }
+  if (width * height > GPT_IMAGE_2_MAX_PIXELS) {
+    throw httpError(400, `gpt-image-2 总像素不能超过 ${GPT_IMAGE_2_MAX_PIXELS}（约 829 万），如 2160x3840。`);
+  }
+  return `${width}x${height}`;
+}
+
 // 按集导出：把每镜的定稿按分镜顺序复制成编号文件 + manifest.json
 function exportProject(input) {
   const { project } = getProject(input.key);
@@ -1471,6 +1539,7 @@ async function generateImages(input) {
     images,
   };
   fs.writeFileSync(path.join(batchDir, "metadata.json"), JSON.stringify(metadata, null, 2), "utf8");
+  invalidateImageListCache(batchId);
 
   return {
     batchId,
@@ -1583,6 +1652,7 @@ async function generateImagesViaResponses(options) {
     images,
   };
   fs.writeFileSync(path.join(batchDir, "metadata.json"), JSON.stringify(metadata, null, 2), "utf8");
+  invalidateImageListCache(batchId);
 
   return {
     batchId,
@@ -1906,63 +1976,33 @@ function mimeFromExtension(extension) {
   return "image/png";
 }
 
+// ===== 图库列表内存缓存 =====
+// outputs/ 会积累上万文件，listImages 每次全盘扫描 + 逐文件 statSync 是热点
+// （前端每次生成完、每次刷新图库都调）。缓存按批次目录分片：
+// batch -> { mtimeMs, images }。每次请求只 readdir 顶层 + statSync 每个批次
+// 目录（几百次 stat，比全量扫低两个量级），目录列表和 mtime 都没变就直接用
+// 缓存；变了只重扫变化的那几个批次目录（增量更新）。目录里增删文件都会改
+// 该目录的 mtime，外部手工删改 outputs/ 的常见情形靠这层对比兜住；本进程
+// 写路径（生图、删图、漫剧归档导出）另外主动失效，不依赖 mtime 分辨率。
+// 注意 listImages 只扫批次目录的直接子文件，_projects/_style-references 及
+// 批次 references/ 等嵌套内容本来就进不了图库，那些写路径无需失效。
+const imageListCache = {
+  batches: new Map(),
+  flat: null, // 按批次倒序摊平的全量列表，命中时直接分页切片
+};
+
+// batchId 省略 = 清空整个缓存。被删的条目下次请求会当作新目录重扫。
+function invalidateImageListCache(batchId) {
+  if (batchId === undefined) {
+    imageListCache.batches.clear();
+  } else {
+    imageListCache.batches.delete(String(batchId));
+  }
+  imageListCache.flat = null;
+}
+
 function listImages(options = {}) {
-  if (!fs.existsSync(outputDir)) {
-    return {
-      images: [],
-      total: 0,
-      page: 1,
-      pageSize: normalizePageSize(options.pageSize),
-      totalPages: 1,
-    };
-  }
-
-  const batches = fs.readdirSync(outputDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-    .reverse();
-
-  const images = [];
-  for (const batch of batches) {
-    const batchDir = path.join(outputDir, batch);
-    const metadataPath = path.join(batchDir, "metadata.json");
-    let createdAt = "";
-    let prompt = "";
-    let requestDetails = {};
-
-    if (fs.existsSync(metadataPath)) {
-      try {
-        const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
-        createdAt = metadata.createdAt || "";
-        requestDetails = metadata.request || {};
-        prompt = requestDetails.prompt || "";
-      } catch {
-        createdAt = "";
-      }
-    }
-
-    for (const file of fs.readdirSync(batchDir, { withFileTypes: true })) {
-      if (!file.isFile() || !/\.(png|jpe?g|webp)$/i.test(file.name)) {
-        continue;
-      }
-
-      const filePath = path.join(batchDir, file.name);
-      const stat = fs.statSync(filePath);
-      images.push({
-        id: `${batch}/${file.name}`,
-        url: `/outputs/${batch}/${file.name}`,
-        filePath,
-        batchId: batch,
-        createdAt,
-        prompt,
-        params: makePublicParams(requestDetails),
-        request: makePublicRequest(requestDetails),
-        bytes: stat.size,
-      });
-    }
-  }
-
+  const images = collectGalleryImages();
   const pageSize = normalizePageSize(options.pageSize);
   const total = images.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -1977,6 +2017,122 @@ function listImages(options = {}) {
     pageSize,
     totalPages,
   };
+}
+
+// 返回全量图库列表（批次 ID 倒序）。缓存有效时零磁盘 IO——
+// 只有顶层 readdir + 每批次目录一次 statSync 的对比成本。
+function collectGalleryImages() {
+  if (!fs.existsSync(outputDir)) {
+    invalidateImageListCache();
+    return [];
+  }
+
+  const batchNames = fs.readdirSync(outputDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort()
+    .reverse();
+
+  const seen = new Set();
+  let changed = false;
+  for (const batch of batchNames) {
+    seen.add(batch);
+    let mtimeMs;
+    try {
+      mtimeMs = fs.statSync(path.join(outputDir, batch)).mtimeMs;
+    } catch {
+      continue; // 对比窗口内目录被删：本轮跳过，下一轮 readdir 就看不到它了
+    }
+    const cached = imageListCache.batches.get(batch);
+    if (cached && cached.mtimeMs === mtimeMs) {
+      continue;
+    }
+    imageListCache.batches.set(batch, {
+      mtimeMs,
+      images: scanBatchDirectory(batch),
+    });
+    changed = true;
+  }
+
+  // 磁盘上已不存在的批次目录从缓存剔除
+  for (const batch of imageListCache.batches.keys()) {
+    if (!seen.has(batch)) {
+      imageListCache.batches.delete(batch);
+      changed = true;
+    }
+  }
+
+  if (!changed && imageListCache.flat) {
+    return imageListCache.flat;
+  }
+
+  const images = [];
+  for (const batch of batchNames) {
+    const cached = imageListCache.batches.get(batch);
+    if (cached) {
+      images.push(...cached.images);
+    }
+  }
+  imageListCache.flat = images;
+  return images;
+}
+
+// 全量扫一个批次目录（readdir + metadata.json + 每文件 statSync）。
+// 只有目录 mtime 变了或缓存失效才会走到这里。
+function scanBatchDirectory(batch) {
+  const batchDir = path.join(outputDir, batch);
+  const metadataPath = path.join(batchDir, "metadata.json");
+  let createdAt = "";
+  let prompt = "";
+  let requestDetails = {};
+
+  if (fs.existsSync(metadataPath)) {
+    try {
+      const metadata = JSON.parse(fs.readFileSync(metadataPath, "utf8"));
+      createdAt = metadata.createdAt || "";
+      requestDetails = metadata.request || {};
+      prompt = requestDetails.prompt || "";
+    } catch {
+      createdAt = "";
+    }
+  }
+
+  const images = [];
+  let entries;
+  try {
+    entries = fs.readdirSync(batchDir, { withFileTypes: true });
+  } catch {
+    return images; // 目录在扫描窗口内被删，当空批次处理
+  }
+  // 同批次所有图片共享同一份 request/params（响应层只做 JSON 序列化，
+  // 共享引用安全），1.6 万张图的缓存别为每张图重复构造大对象。
+  const params = makePublicParams(requestDetails);
+  const request = makePublicRequest(requestDetails);
+  for (const file of entries) {
+    if (!file.isFile() || !/\.(png|jpe?g|webp)$/i.test(file.name)) {
+      continue;
+    }
+
+    const filePath = path.join(batchDir, file.name);
+    let stat;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      continue;
+    }
+    images.push({
+      id: `${batch}/${file.name}`,
+      url: `/outputs/${batch}/${file.name}`,
+      filePath,
+      batchId: batch,
+      createdAt,
+      prompt,
+      params,
+      request,
+      bytes: stat.size,
+    });
+  }
+  return images;
 }
 
 function normalizePageSize(value) {
@@ -2016,6 +2172,7 @@ function deleteImageById(id) {
 
   fs.unlinkSync(filePath);
   removeImageFromMetadata(batchId, safeId);
+  invalidateImageListCache(batchId);
   return true;
 }
 
@@ -2410,6 +2567,7 @@ async function generateImagesViaChat(options) {
     images,
   };
   fs.writeFileSync(path.join(batchDir, "metadata.json"), JSON.stringify(metadata, null, 2), "utf8");
+  invalidateImageListCache(batchId);
 
   return {
     batchId,
@@ -4219,7 +4377,7 @@ function maskKey(key) {
   return `${key.slice(0, 6)}...${key.slice(-4)}`;
 }
 
-function serveFile(res, baseDir, relativePath) {
+function serveFile(res, baseDir, relativePath, cacheControl) {
   const decoded = decodeURIComponent(relativePath || "");
   const filePath = path.resolve(baseDir, decoded);
   const basePath = path.resolve(baseDir);
@@ -4235,9 +4393,29 @@ function serveFile(res, baseDir, relativePath) {
   const extension = path.extname(filePath).toLowerCase();
   res.writeHead(200, {
     "Content-Type": MIME_TYPES[extension] || "application/octet-stream",
-    "Cache-Control": "no-store",
+    "Cache-Control": cacheControl || "no-store",
   });
   fs.createReadStream(filePath).pipe(res);
+}
+
+// /outputs/** 的 Cache-Control：批次图片按批次 ID（时间戳+随机段）命名目录、
+// 落盘后不再改写，可长缓存；漫剧归档导出同理（exportId 唯一 + uniqueFilePath
+// 防覆盖）。但两棵子树的图片会原地同名换内容，必须排除：
+//   1. _projects/**：ref-NN / cand-NN 的序号 = 现存文件最大序号 +1，删掉最高
+//      号的文件再传/再生成，序号会被复用（同名新图，见 copyFileIntoProject）；
+//      export/ 每次导出 rmSync 重建，001_<镜号> 重复导出同名不同内容。
+//   2. _style-references/<styleId>/style-NN.*：按数组下标命名，重存同一风格
+//      直接覆盖。
+// 非图片（project.json、manifest.json 等）一律 no-store。
+function outputsCacheControl(relativePath) {
+  const normalized = String(relativePath || "").replace(/\\/g, "/");
+  if (!/\.(png|jpe?g|webp|gif)$/i.test(normalized)) {
+    return "no-store";
+  }
+  if (normalized.startsWith("_projects/") || normalized.startsWith("_style-references/")) {
+    return "no-store";
+  }
+  return "public, max-age=31536000, immutable";
 }
 
 function normalizePrompt(prompt) {

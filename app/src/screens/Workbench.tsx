@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useWorkbench } from '@/store/workbench'
+import Lightbox from '@/components/Lightbox'
 import { openPrompt, openPromptFields } from '@/components/PromptDialog'
 import type { ProjectCharacter, ProjectShot } from '@/types'
 
 function CharacterCard({ char }: { char: ProjectCharacter }) {
   const uploadCharacterRef = useWorkbench((s) => s.uploadCharacterRef)
   const generateCharacterBase = useWorkbench((s) => s.generateCharacterBase)
+  const cancelCharacterBase = useWorkbench((s) => s.cancelCharacterBase)
   const lockCandidate = useWorkbench((s) => s.lockCandidate)
   const deleteBaseCandidate = useWorkbench((s) => s.deleteBaseCandidate)
   const deleteCharacterRef = useWorkbench((s) => s.deleteCharacterRef)
@@ -20,6 +22,8 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
   const [name, setName] = useState(char.name)
   const [role, setRole] = useState(char.role || '')
   const [lock, setLock] = useState(char.appearance?.imageLockPhrase || '')
+  // 放大审片：候选缩略图太小看不清细节，点 ⤢ 用 Lightbox 打开（可左右切换同角色候选）
+  const [zoom, setZoom] = useState<number | null>(null)
 
   function startEdit() {
     setName(char.name)
@@ -126,7 +130,7 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
         <div>
           <p className="text-[11px] text-neutral-500 mb-1">基准图候选（点一张锁定）</p>
           <div className="grid grid-cols-4 gap-1.5">
-            {candidates.map((url) => (
+            {candidates.map((url, i) => (
               <div key={url} className="relative group">
                 <button
                   onClick={() => lockCandidate(char.id, url)}
@@ -134,6 +138,16 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
                   className="block w-full rounded overflow-hidden border-2 border-transparent hover:border-accent-soft"
                 >
                   <img src={url} alt="" className="w-full aspect-square object-cover" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setZoom(i)
+                  }}
+                  title="放大查看"
+                  className="absolute top-0.5 right-5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-200 opacity-0 group-hover:opacity-100 hover:bg-black/90"
+                >
+                  ⤢
                 </button>
                 <button
                   onClick={(e) => {
@@ -148,16 +162,33 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
               </div>
             ))}
           </div>
+          {zoom !== null && (
+            <Lightbox
+              images={candidates.map((u) => ({ id: u, url: u }))}
+              index={Math.min(zoom, candidates.length - 1)}
+              onIndexChange={setZoom}
+              onClose={() => setZoom(null)}
+            />
+          )}
         </div>
       )}
       <div className="grid grid-cols-2 gap-2">
-        <button
-          disabled={busy}
-          onClick={() => generateCharacterBase(char.id, 2)}
-          className="text-xs py-1.5 rounded bg-accent hover:bg-accent-soft text-white disabled:opacity-40"
-        >
-          {busy ? '生成中…' : '生成基准图'}
-        </button>
+        {busy ? (
+          <button
+            onClick={() => cancelCharacterBase(char.id)}
+            title="中断等待（服务端可能仍在完成本次生成并计费）"
+            className="text-xs py-1.5 rounded border border-red-900/60 text-red-300 hover:bg-red-950/40"
+          >
+            取消生成
+          </button>
+        ) : (
+          <button
+            onClick={() => generateCharacterBase(char.id, 2)}
+            className="text-xs py-1.5 rounded bg-accent hover:bg-accent-soft text-white"
+          >
+            生成基准图
+          </button>
+        )}
         <label className="block text-center text-xs py-1.5 rounded border border-dashed border-line text-neutral-400 hover:border-accent-soft hover:text-neutral-200 cursor-pointer">
           上传基准图
           <input
@@ -272,11 +303,14 @@ function ShotCard({
   const shotBusy = useWorkbench((s) => s.shotBusy[shot.shotId])
   const batchRunning = useWorkbench((s) => s.batchRunning)
   const generateShot = useWorkbench((s) => s.generateShot)
+  const cancelShot = useWorkbench((s) => s.cancelShot)
   const chooseCandidate = useWorkbench((s) => s.chooseCandidate)
   const deleteCandidate = useWorkbench((s) => s.deleteCandidate)
   const deleteShot = useWorkbench((s) => s.deleteShot)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  // 放大审片：候选点击主体仍是定稿/取消，⤢ 才是放大（Lightbox 可左右切换同镜候选）
+  const [zoom, setZoom] = useState<number | null>(null)
   const render = current?.renders?.find((r) => r.shotId === shot.shotId)
 
   return (
@@ -306,14 +340,32 @@ function ShotCard({
           >
             删除
           </button>
-          <button
-            disabled={shotBusy || batchRunning || !shot.prompt}
-            onClick={() => generateShot(shot.shotId, count)}
-            title={!shot.prompt ? '先「编辑」补上提示词' : ''}
-            className="text-xs px-3 py-1.5 rounded bg-accent hover:bg-accent-soft text-white disabled:opacity-40"
-          >
-            {shotBusy ? '出图中…' : `生成 ${count} 张`}
-          </button>
+          {shotBusy && batchRunning ? (
+            // 批量跑到这一镜：中断请用顶栏「停止」（会一并 abort 当前镜）。
+            <button
+              disabled
+              className="text-xs px-3 py-1.5 rounded bg-accent text-white opacity-40 cursor-not-allowed"
+            >
+              出图中…
+            </button>
+          ) : shotBusy ? (
+            <button
+              onClick={() => cancelShot(shot.shotId)}
+              title="中断等待（服务端可能仍在完成本次生成并计费）"
+              className="text-xs px-3 py-1.5 rounded border border-red-900/60 text-red-300 hover:bg-red-950/40"
+            >
+              取消出图
+            </button>
+          ) : (
+            <button
+              disabled={batchRunning || !shot.prompt}
+              onClick={() => generateShot(shot.shotId, count)}
+              title={!shot.prompt ? '先「编辑」补上提示词' : ''}
+              className="text-xs px-3 py-1.5 rounded bg-accent hover:bg-accent-soft text-white disabled:opacity-40"
+            >
+              生成 {count} 张
+            </button>
+          )}
         </div>
       </div>
 
@@ -332,35 +384,184 @@ function ShotCard({
       )}
 
       {render && render.candidates.length > 0 && (
-        <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
-          {render.candidates.map((cand) => {
-            const chosen = render.chosenImageId === cand.imageId
-            return (
-              <div key={cand.imageId} className="relative group">
-                <button
-                  onClick={() => chooseCandidate(shot.shotId, chosen ? undefined : cand.imageId)}
-                  className={`block w-full rounded overflow-hidden border-2 ${
-                    chosen ? 'border-emerald-400' : 'border-transparent hover:border-line'
-                  }`}
-                  title={chosen ? '取消定稿' : '设为定稿'}
-                >
-                  <img src={cand.file} alt="" className="w-full aspect-[3/4] object-cover" />
-                  {chosen && (
-                    <span className="absolute top-1 left-1 text-[10px] px-1 rounded bg-emerald-500 text-black">✓</span>
-                  )}
-                </button>
-                <button
-                  onClick={() => deleteCandidate(shot.shotId, cand.imageId)}
-                  title="删除这张候选"
-                  className="absolute top-1 right-1 text-[11px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
-                >
-                  ×
-                </button>
-              </div>
-            )
-          })}
-        </div>
+        <>
+          <div className="grid grid-cols-4 md:grid-cols-6 gap-2">
+            {render.candidates.map((cand, i) => {
+              const chosen = render.chosenImageId === cand.imageId
+              return (
+                <div key={cand.imageId} className="relative group">
+                  <button
+                    onClick={() => chooseCandidate(shot.shotId, chosen ? undefined : cand.imageId)}
+                    className={`block w-full rounded overflow-hidden border-2 ${
+                      chosen ? 'border-emerald-400' : 'border-transparent hover:border-line'
+                    }`}
+                    title={chosen ? '取消定稿' : '设为定稿'}
+                  >
+                    <img src={cand.file} alt="" className="w-full aspect-[3/4] object-cover" />
+                    {chosen && (
+                      <span className="absolute top-1 left-1 text-[10px] px-1 rounded bg-emerald-500 text-black">✓</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setZoom(i)
+                    }}
+                    title="放大查看"
+                    className="absolute top-1 right-6 text-[11px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-200 opacity-0 group-hover:opacity-100 hover:bg-black/90"
+                  >
+                    ⤢
+                  </button>
+                  <button
+                    onClick={() => deleteCandidate(shot.shotId, cand.imageId)}
+                    title="删除这张候选"
+                    className="absolute top-1 right-1 text-[11px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
+                  >
+                    ×
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+          {zoom !== null && (
+            <Lightbox
+              images={render.candidates.map((c) => ({ id: c.imageId, url: c.file, createdAt: c.createdAt }))}
+              index={Math.min(zoom, render.candidates.length - 1)}
+              onIndexChange={setZoom}
+              onClose={() => setZoom(null)}
+            />
+          )}
+        </>
       )}
+    </div>
+  )
+}
+
+// 项目设置弹层：项目名/集号/风格锁定句/通用负面/默认生图参数。
+// 视觉复用 SettingsModal 的弹层风格（遮罩 + bg-ink 面板）。
+// 尺寸/模型留空 = 不改（后端同语义）；保存成功才关闭，失败在弹层内显示错误。
+function ProjectSettingsModal({ onClose }: { onClose: () => void }) {
+  const current = useWorkbench((s) => s.current)
+  const updateSettings = useWorkbench((s) => s.updateSettings)
+  const error = useWorkbench((s) => s.error)
+  const [name, setName] = useState(current?.project.name || '')
+  const [episode, setEpisode] = useState(current?.episode || '')
+  const [lockPhrase, setLockPhrase] = useState(current?.style?.lockPhrase || '')
+  const [globalNegative, setGlobalNegative] = useState(current?.style?.globalNegative || '')
+  const [size, setSize] = useState(current?.defaults?.size || '')
+  const [model, setModel] = useState(current?.defaults?.model || '')
+  const [attach, setAttach] = useState(current?.defaults?.attachCharacterRefs !== false)
+  const [saving, setSaving] = useState(false)
+
+  if (!current) return null
+
+  async function save() {
+    setSaving(true)
+    const ok = await updateSettings({
+      name: name.trim(),
+      episode: episode.trim(),
+      style: { lockPhrase, globalNegative },
+      defaults: { size: size.trim(), model: model.trim(), attachCharacterRefs: attach },
+    })
+    setSaving(false)
+    if (ok) onClose()
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-ink border border-line rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-5 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-neutral-100">项目设置</h2>
+          <button className="text-neutral-400 hover:text-neutral-200" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-[11px] text-neutral-500">
+            项目名
+            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full text-xs mt-0.5" />
+          </label>
+          <label className="block text-[11px] text-neutral-500">
+            集号（可空）
+            <input
+              value={episode}
+              onChange={(e) => setEpisode(e.target.value)}
+              placeholder="如 S01E01"
+              className="w-full text-xs mt-0.5"
+            />
+          </label>
+        </div>
+        <p className="text-[11px] text-neutral-600">改名只改显示，磁盘目录（项目 key）不变。</p>
+
+        <label className="block text-[11px] text-neutral-500">
+          风格锁定句（生成角色基准图时拼进提示词，统一全片画风）
+          <textarea
+            value={lockPhrase}
+            onChange={(e) => setLockPhrase(e.target.value)}
+            rows={3}
+            placeholder="如：国漫厚涂风格，电影感打光，高细节…"
+            className="w-full text-xs mt-0.5"
+          />
+        </label>
+        <label className="block text-[11px] text-neutral-500">
+          通用负面（分镜没写反向词时用它）
+          <textarea
+            value={globalNegative}
+            onChange={(e) => setGlobalNegative(e.target.value)}
+            rows={2}
+            placeholder="如：文字、水印、畸形手指…"
+            className="w-full text-xs mt-0.5"
+          />
+        </label>
+
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block text-[11px] text-neutral-500">
+            默认尺寸
+            <input
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              placeholder="宽x高，如 2160x3840"
+              className="w-full text-xs mt-0.5"
+            />
+          </label>
+          <label className="block text-[11px] text-neutral-500">
+            默认模型
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="如 gpt-image-2"
+              className="w-full text-xs mt-0.5"
+            />
+          </label>
+        </div>
+        <p className="text-[11px] text-neutral-600">
+          gpt-image-2 尺寸约束：宽高都是 16 的倍数、单边 ≤3840、总像素 ≤829 万；留空 = 不改。
+        </p>
+
+        <label className="flex items-center gap-2 text-xs text-neutral-300">
+          <input type="checkbox" checked={attach} onChange={(e) => setAttach(e.target.checked)} />
+          出图时自动挂出场角色的锚点参考图
+        </label>
+
+        {error && <p className="text-xs text-red-300">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded border border-line text-neutral-300 hover:text-neutral-100">
+            取消
+          </button>
+          <button
+            onClick={save}
+            disabled={saving}
+            className="text-xs px-3 py-1.5 rounded bg-accent hover:bg-accent-soft text-white disabled:opacity-50"
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -389,6 +590,7 @@ export default function Workbench() {
     upsertCharacter,
   } = useWorkbench()
   const [count, setCount] = useState(2)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -424,7 +626,9 @@ export default function Workbench() {
         <select
           value={currentKey || ''}
           onChange={(e) => openProject(e.target.value)}
-          className="min-w-[200px]"
+          disabled={batchRunning}
+          title={batchRunning ? '批量出图中不能切换项目' : undefined}
+          className="min-w-[200px] disabled:opacity-50"
         >
           <option value="">选择项目…</option>
           {projects.map((p) => (
@@ -447,10 +651,20 @@ export default function Workbench() {
         </label>
         <button
           onClick={newProject}
-          className="text-sm px-3 py-2 rounded-lg border border-line text-neutral-200 hover:border-accent-soft"
+          disabled={batchRunning}
+          title={batchRunning ? '批量出图中不能新建项目' : undefined}
+          className="text-sm px-3 py-2 rounded-lg border border-line text-neutral-200 hover:border-accent-soft disabled:opacity-50"
         >
           新建空项目
         </button>
+        {current && (
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="text-sm px-3 py-2 rounded-lg border border-line text-neutral-200 hover:border-accent-soft"
+          >
+            项目设置
+          </button>
+        )}
         {current && (
           <span className="text-xs text-neutral-500">
             {current.project.name} {current.episode} · 人设 {charsWithRef}/{current.characters.length} 已锁 · 分镜{' '}
@@ -476,9 +690,10 @@ export default function Workbench() {
                 </span>
                 <button
                   onClick={stopBatch}
-                  className="text-xs px-3 py-1.5 rounded border border-red-900/60 text-red-300"
+                  title="立即停止：中断当前正在跑的一镜（服务端可能仍在完成并计费）"
+                  className="text-xs px-3 py-1.5 rounded border border-red-900/60 text-red-300 hover:bg-red-950/40"
                 >
-                  停止
+                  停止并中断当前
                 </button>
               </>
             ) : (
@@ -562,6 +777,11 @@ export default function Workbench() {
             )}
           </main>
         </div>
+      )}
+
+      {settingsOpen && current && (
+        // key 绑定项目：切项目后再开弹层，表单从新项目初始化
+        <ProjectSettingsModal key={currentKey || ''} onClose={() => setSettingsOpen(false)} />
       )}
     </div>
   )

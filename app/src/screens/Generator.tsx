@@ -70,6 +70,7 @@ export default function Generator() {
     removeRef,
     clearRefs,
     generate,
+    cancelGenerate,
     generating,
     optimize,
     optimizing,
@@ -583,13 +584,31 @@ export default function Generator() {
           )}
         </div>
 
-        <button
-          disabled={!canGenerate}
-          onClick={generate}
-          className="w-full py-3 rounded-lg font-bold text-white bg-accent enabled:hover:bg-accent-soft disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {generating ? '生成中…' : '生成图片'}
-        </button>
+        {generating ? (
+          <div className="flex gap-2">
+            <button
+              disabled
+              className="flex-1 py-3 rounded-lg font-bold text-white bg-accent opacity-60 cursor-not-allowed"
+            >
+              生成中…
+            </button>
+            <button
+              onClick={cancelGenerate}
+              title="中断等待（服务端可能仍在完成本次生成并计费）"
+              className="px-4 py-3 rounded-lg font-bold text-red-300 border border-red-900/60 hover:bg-red-950/40"
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <button
+            disabled={!canGenerate}
+            onClick={generate}
+            className="w-full py-3 rounded-lg font-bold text-white bg-accent enabled:hover:bg-accent-soft disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            生成图片
+          </button>
+        )}
         {config && !config.hasApiKey && (
           <p className="text-xs text-amber-400">
             还没配置 API Key，点右上角「设置」填一个。
