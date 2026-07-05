@@ -47,6 +47,9 @@ function AuxiliarySection() {
     auxModels,
     auxModelsBusy,
     auxModelsError,
+    auxTestResult,
+    auxTestBusy,
+    testAuxiliary,
     saveAuxiliary,
     setActiveAuxiliary,
     removeAuxiliary,
@@ -217,7 +220,38 @@ function AuxiliarySection() {
         {auxModelsError && <p className="text-[11px] text-red-400 mt-1">{auxModelsError}</p>}
       </label>
 
+      {auxTestResult && (
+        <div
+          className={`text-xs px-3 py-2 rounded-lg border ${
+            auxTestResult.ok
+              ? 'text-emerald-300 border-emerald-900/60 bg-emerald-950/20'
+              : 'text-red-300 border-red-900/60 bg-red-950/30'
+          }`}
+        >
+          {auxTestResult.ok
+            ? `连接成功${auxTestResult.model ? ` · 模型 ${auxTestResult.model}` : ''}${
+                auxTestResult.text ? ` · 回声「${auxTestResult.text}」` : ''
+              }`
+            : `连接失败：${auxTestResult.error || '未知错误'}`}
+          {auxTestResult.hint && <div className="text-neutral-500 mt-1">{auxTestResult.hint}</div>}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 pt-1">
+        <button
+          disabled={auxTestBusy || settingsBusy}
+          onClick={() =>
+            testAuxiliary({
+              useActiveProfile: form.useActiveProfile,
+              apiKey: form.apiKey || undefined,
+              baseUrl: form.baseUrl,
+              model: form.model.trim() || undefined,
+            })
+          }
+          className="text-sm px-4 py-2 rounded-lg border border-line text-neutral-200 disabled:opacity-40"
+        >
+          {auxTestBusy ? '测试中…' : '测试连接'}
+        </button>
         <button
           disabled={settingsBusy || !form.name.trim()}
           onClick={submit}
@@ -363,6 +397,16 @@ export default function SettingsModal() {
     if (active && editingId === null) selectProfile(active)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsOpen, settings])
+
+  // Esc 关闭设置弹窗（与遮罩点击、右上角 ✕ 等价）。
+  useEffect(() => {
+    if (!settingsOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeSettings()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [settingsOpen, closeSettings])
 
   if (!settingsOpen) return null
 

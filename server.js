@@ -380,7 +380,7 @@ function projectKeyFromPackage(pkg) {
 function projectDirFor(key) {
   const slug = projectSlug(key);
   const dir = path.resolve(projectsDir, slug);
-  if (dir !== path.resolve(projectsDir, slug) || !dir.startsWith(path.resolve(projectsDir) + path.sep)) {
+  if (!dir.startsWith(path.resolve(projectsDir) + path.sep)) {
     throw httpError(400, "Bad project key.");
   }
   return dir;
@@ -2123,7 +2123,6 @@ function scanBatchDirectory(batch) {
     images.push({
       id: `${batch}/${file.name}`,
       url: `/outputs/${batch}/${file.name}`,
-      filePath,
       batchId: batch,
       createdAt,
       prompt,
@@ -2705,9 +2704,10 @@ async function saveExtractedImages({ extracted, batchId, batchDir, size, outputF
     fs.writeFileSync(filePath, buffer);
     images.push(decorateImageRecord({
       image: {
+        // filePath（本机绝对路径）不放进 record：generate 响应会发给前端，
+        // 内部写盘已用上面的同名局部变量，record 无内部消费者。与 listImages 一致不外泄。
         id: `${batchId}/${fileName}`,
         url: `/outputs/${batchId}/${fileName}`,
-        filePath,
         revisedPrompt: "",
         size,
         format: extension,
@@ -4347,7 +4347,6 @@ function normalizeEndpointMode(value) {
 }
 
 function normalizeModelForEndpoint(value, endpointMode) {
-  normalizeEndpointMode(endpointMode);
   const model = String(value || ENV_OPENAI_IMAGE_MODEL).trim();
   if (!model || model.length > 120 || /[\r\n]/.test(model)) {
     throw httpError(400, "Invalid image model.");

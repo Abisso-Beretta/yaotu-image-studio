@@ -178,6 +178,9 @@ export interface TestResult {
   endpoint?: string
   status?: number
   modelCount?: number
+  // 辅助 API 测试连接额外返回：用到的对话模型与其回声文本。
+  model?: string
+  text?: string
   error?: string
   hint?: string
 }

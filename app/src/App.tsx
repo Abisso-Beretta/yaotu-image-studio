@@ -122,7 +122,7 @@ export default function App() {
             <a
               href="/"
               className="text-xs text-neutral-500 hover:text-neutral-300"
-              title="旧版界面（提示词库 / 样图分析等尚未迁移的功能）"
+              title="打开旧版网页界面"
             >
               旧版
             </a>

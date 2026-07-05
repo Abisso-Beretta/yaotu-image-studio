@@ -67,7 +67,7 @@ export const api = {
     jsonFetch<ImagesPage>(`/api/images?page=${page}&pageSize=${pageSize}`),
 
   deleteImages: (ids: string[]) =>
-    postJson<{ deleted: string[]; failed?: string[] }>('/api/images/delete', { ids }),
+    postJson<{ deleted: string[]; failed?: { id: string; error: string }[] }>('/api/images/delete', { ids }),
 
   getSettings: () => jsonFetch<AppSettings>('/api/settings'),
 
@@ -78,6 +78,13 @@ export const api = {
 
   testConnection: (body: { profileId?: string; apiKey?: string; baseUrl?: string }) =>
     postJson<TestResult>('/api/test-connection', body),
+
+  testAuxiliary: (body: {
+    useActiveProfile?: boolean
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+  }) => postJson<TestResult>('/api/test-auxiliary', body),
 
   listImageModels: (body: { profileId?: string; apiKey?: string; baseUrl?: string }) =>
     postJson<AuxiliaryModelsResult>('/api/image-models', body),

@@ -211,6 +211,9 @@ interface GeneratorState {
   auxModels: string[]
   auxModelsBusy: boolean
   auxModelsError: string | null
+  auxTestResult: TestResult | null
+  auxTestBusy: boolean
+  testAuxiliary: (input: { useActiveProfile?: boolean; apiKey?: string; baseUrl?: string; model?: string }) => Promise<void>
   saveAuxiliary: (input: AuxiliaryInput) => Promise<void>
   setActiveAuxiliary: (id: string) => Promise<void>
   removeAuxiliary: (id: string) => Promise<void>
@@ -295,6 +298,8 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
   auxModels: [],
   auxModelsBusy: false,
   auxModelsError: null,
+  auxTestResult: null,
+  auxTestBusy: false,
 
   loadConfig: async () => {
     try {
@@ -422,7 +427,8 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       form: {
         ...s.form,
         prompt: r.prompt ?? img.prompt ?? s.form.prompt,
-        negativePrompt: r.negativePrompt ?? '',
+        // 老图没记录负面词时，保留用户当前输入而不是清空。
+        negativePrompt: r.negativePrompt ?? s.form.negativePrompt,
         model: r.model ?? s.form.model,
         size: r.size ?? s.form.size,
         quality: r.quality ?? s.form.quality,
@@ -685,6 +691,18 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
     }
   },
 
+  testAuxiliary: async (input) => {
+    set({ auxTestBusy: true, auxTestResult: null })
+    try {
+      const auxTestResult = await api.testAuxiliary(input)
+      set({ auxTestResult })
+    } catch (e) {
+      set({ auxTestResult: { ok: false, error: (e as Error).message } })
+    } finally {
+      set({ auxTestBusy: false })
+    }
+  },
+
   saveAuxiliary: async (input) => {
     set({ settingsBusy: true })
     try {
@@ -738,3 +756,16 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
     }
   },
 }))
+
+// 成功类 notice 属于「一次性提示」，看过即可，几秒后自动消失，避免长期占屏。
+// error 不自动清除——错误信息用户需要看清、并保留到下次操作再刷新。
+let noticeTimer: ReturnType<typeof setTimeout> | undefined
+useGenerator.subscribe((state, prev) => {
+  if (state.notice && state.notice !== prev.notice) {
+    clearTimeout(noticeTimer)
+    const current = state.notice
+    noticeTimer = setTimeout(() => {
+      if (useGenerator.getState().notice === current) useGenerator.setState({ notice: null })
+    }, 5000)
+  }
+})

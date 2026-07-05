@@ -17,6 +17,7 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
   const [dragging, setDragging] = useState(false)
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null)
   const dragStart = useRef({ x: 0, y: 0 })
+  const containerRef = useRef<HTMLDivElement>(null)
   const img = images[index]
   const canPrev = index > 0
   const canNext = index < images.length - 1
@@ -53,20 +54,30 @@ export default function Lightbox({ images, index, onIndexChange, onClose }: Ligh
     return () => window.removeEventListener('keydown', onKey)
   }, [index, images.length, onIndexChange, onClose])
 
+  // 滚轮缩放要阻止背后图库页面跟着滚。React 的 onWheel 以 passive 注册，
+  // 里面的 preventDefault 无效——必须用原生 addEventListener + passive:false。
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    function onWheel(e: WheelEvent) {
+      e.preventDefault()
+      setScale((s) => {
+        const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s + (e.deltaY < 0 ? 0.15 : -0.15)))
+        if (next === MIN_SCALE) setOffset({ x: 0, y: 0 })
+        return next
+      })
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   if (!img) return null
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center overflow-hidden"
       onClick={onClose}
-      onWheel={(e) => {
-        e.preventDefault()
-        setScale((s) => {
-          const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, s + (e.deltaY < 0 ? 0.15 : -0.15)))
-          if (next === MIN_SCALE) setOffset({ x: 0, y: 0 })
-          return next
-        })
-      }}
     >
       <a
         href={img.url}
