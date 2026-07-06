@@ -303,6 +303,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/lock") {
       return sendJson(res, 200, projectResponseForApi(await lockProjectCharacterRef(await readJson(req))));
     }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/reorder") {
+      return sendJson(res, 200, projectResponseForApi(await reorderProjectCharacterRefs(await readJson(req))));
+    }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/candidate/delete") {
       return sendJson(res, 200, projectResponseForApi(await deleteProjectCandidate(await readJson(req))));
     }
@@ -1038,6 +1041,35 @@ function lockProjectCharacterRef(input) {
     const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
     if (!refs.some((r) => r.id === refId)) throw httpError(404, "参考图不存在。");
     character.referenceImages = refs.map((r) => ({ ...r, locked: r.id === refId }));
+  });
+}
+
+function reorderProjectCharacterRefs(input) {
+  return withProject(input.key, (project) => {
+    const charId = String(input.characterId || "");
+    const orderedRefIds = Array.isArray(input.orderedRefIds) ? input.orderedRefIds.map(String) : [];
+    const character = (project.characters || []).find((c) => c.id === charId);
+    if (!character) throw httpError(404, "角色不存在。");
+    const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+    const byId = new Map(refs.map((r) => [r.id, r]));
+    const seen = new Set();
+    const ordered = [];
+    // 先按 orderedRefIds 给出的顺序排（忽略不存在的 id 和重复项）
+    for (const id of orderedRefIds) {
+      const ref = byId.get(id);
+      if (ref && !seen.has(id)) {
+        ordered.push(ref);
+        seen.add(id);
+      }
+    }
+    // orderedRefIds 里没列到的，按原相对顺序追加在后面
+    for (const r of refs) {
+      if (!seen.has(r.id)) {
+        ordered.push(r);
+        seen.add(r.id);
+      }
+    }
+    character.referenceImages = ordered;
   });
 }
 

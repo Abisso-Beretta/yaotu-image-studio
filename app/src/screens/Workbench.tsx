@@ -4,7 +4,7 @@ import Lightbox from '@/components/Lightbox'
 import { openPrompt, openPromptFields } from '@/components/PromptDialog'
 import type { ProjectCharacter, ProjectShot } from '@/types'
 
-function CharacterCard({ char }: { char: ProjectCharacter }) {
+function CharacterCard({ char, wide }: { char: ProjectCharacter; wide?: boolean }) {
   const uploadCharacterRef = useWorkbench((s) => s.uploadCharacterRef)
   const generateCharacterBase = useWorkbench((s) => s.generateCharacterBase)
   const cancelCharacterBase = useWorkbench((s) => s.cancelCharacterBase)
@@ -12,6 +12,7 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
   const deleteBaseCandidate = useWorkbench((s) => s.deleteBaseCandidate)
   const deleteCharacterRef = useWorkbench((s) => s.deleteCharacterRef)
   const lockCharacterRef = useWorkbench((s) => s.lockCharacterRef)
+  const reorderCharacterRefs = useWorkbench((s) => s.reorderCharacterRefs)
   const upsertCharacter = useWorkbench((s) => s.upsertCharacter)
   const deleteCharacter = useWorkbench((s) => s.deleteCharacter)
   const busy = useWorkbench((s) => s.charBusy[char.id])
@@ -24,6 +25,8 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
   const [lock, setLock] = useState(char.appearance?.imageLockPhrase || '')
   // 放大审片：候选缩略图太小看不清细节，点 ⤢ 用 Lightbox 打开（可左右切换同角色候选）
   const [zoom, setZoom] = useState<number | null>(null)
+  // 参考图放大：⤢ 用 Lightbox 打开这个角色的全部参考图
+  const [refZoom, setRefZoom] = useState<number | null>(null)
 
   function startEdit() {
     setName(char.name)
@@ -34,6 +37,14 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
   async function save() {
     await upsertCharacter({ characterId: char.id, name, role, imageLockPhrase: lock })
     setEditing(false)
+  }
+  // 参考图排序：把第 i 张移到 i+dir，算出新顺序调 reorder 接口持久化（锚点不必在首位，只影响展示次序）
+  function moveRef(i: number, dir: -1 | 1) {
+    const j = i + dir
+    if (j < 0 || j >= refs.length) return
+    const next = refs.slice()
+    ;[next[i], next[j]] = [next[j], next[i]]
+    reorderCharacterRefs(char.id, next.map((r) => r.id))
   }
 
   return (
@@ -98,10 +109,17 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
       )}
 
       {refs.length > 0 && (
-        <div className="grid grid-cols-4 gap-1.5">
-          {refs.map((r) => (
+        <div>
+        <div className={`grid ${wide ? 'grid-cols-6' : 'grid-cols-4'} gap-1.5`}>
+          {refs.map((r, i) => (
             <div key={r.id} className="relative group">
-              <img src={r.file} alt="" className="w-full aspect-square object-cover rounded border border-line" />
+              <img
+                src={r.file}
+                alt=""
+                className={`w-full aspect-square object-cover rounded border border-line${
+                  r.locked ? ' ring-2 ring-emerald-400' : ''
+                }`}
+              />
               {r.locked ? (
                 <span className="absolute top-0.5 left-0.5 text-[9px] px-1 rounded bg-black/70 text-emerald-300">
                   锚
@@ -116,20 +134,63 @@ function CharacterCard({ char }: { char: ProjectCharacter }) {
                 </button>
               )}
               <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setRefZoom(i)
+                }}
+                title="放大查看"
+                className="absolute top-0.5 right-5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-200 opacity-0 group-hover:opacity-100 hover:bg-black/90"
+              >
+                ⤢
+              </button>
+              <button
                 onClick={() => deleteCharacterRef(char.id, r.id)}
                 title="删除这张参考图"
                 className="absolute top-0.5 right-0.5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
               >
                 ×
               </button>
+              <div className="absolute inset-x-0 bottom-0.5 flex items-center justify-between px-0.5">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    moveRef(i, -1)
+                  }}
+                  disabled={i === 0}
+                  title="前移"
+                  className="text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-300 opacity-0 group-hover:opacity-100 hover:text-neutral-100 disabled:opacity-20"
+                >
+                  ◀
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    moveRef(i, 1)
+                  }}
+                  disabled={i === refs.length - 1}
+                  title="后移"
+                  className="text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-300 opacity-0 group-hover:opacity-100 hover:text-neutral-100 disabled:opacity-20"
+                >
+                  ▶
+                </button>
+              </div>
             </div>
           ))}
+        </div>
+          {refZoom !== null && (
+            <Lightbox
+              images={refs.map((r) => ({ id: r.id, url: r.file }))}
+              index={Math.min(refZoom, refs.length - 1)}
+              onIndexChange={setRefZoom}
+              onClose={() => setRefZoom(null)}
+            />
+          )}
         </div>
       )}
       {candidates.length > 0 && (
         <div>
           <p className="text-[11px] text-neutral-500 mb-1">基准图候选（点一张锁定）</p>
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className={`grid ${wide ? 'grid-cols-6' : 'grid-cols-4'} gap-1.5`}>
             {candidates.map((url, i) => (
               <div key={url} className="relative group">
                 <button
@@ -318,11 +379,14 @@ function ShotCard({
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm font-mono text-neutral-200">{shot.shotId}</span>
         {shot.shotType && <span className="text-xs text-neutral-500">{shot.shotType}</span>}
-        {shot.characterIds.map((c) => (
-          <span key={c} className="text-[11px] px-1.5 py-0.5 rounded bg-accent/20 text-emerald-200 border border-emerald-900/40">
-            {c}
-          </span>
-        ))}
+        {shot.characterIds.map((cid) => {
+          const c = characters.find((x) => x.id === cid)
+          return (
+            <span key={cid} className="text-[11px] px-1.5 py-0.5 rounded bg-accent/20 text-emerald-200 border border-emerald-900/40">
+              {c?.name || cid}
+            </span>
+          )
+        })}
         {render?.chosenImageId && (
           <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-700/30 text-emerald-200">✓ 已定稿</span>
         )}
@@ -591,6 +655,7 @@ export default function Workbench() {
   } = useWorkbench()
   const [count, setCount] = useState(2)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [view, setView] = useState<'shots' | 'characters'>('shots')
 
   useEffect(() => {
     loadProjects()
@@ -744,38 +809,68 @@ export default function Workbench() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 grid grid-cols-[320px_1fr] max-[900px]:grid-cols-1">
-          {/* 人设库 */}
-          <aside className="border-r border-line overflow-y-auto p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-300">人设库 · 一致性锚</h2>
-              <button onClick={addCharacter} className="text-[11px] text-accent hover:text-accent-soft">
-                + 添加角色
-              </button>
-            </div>
-            {current.characters.length === 0 ? (
-              <p className="text-xs text-neutral-500">还没有角色，点「+ 添加角色」建一个。</p>
-            ) : (
-              current.characters.map((c) => <CharacterCard key={c.id} char={c} />)
-            )}
-          </aside>
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* 分镜 / 人设库 切换 */}
+          <div className="flex items-center gap-2 px-5 pt-3">
+            <button
+              onClick={() => setView('shots')}
+              className={`text-xs px-3 py-1.5 rounded border ${
+                view === 'shots'
+                  ? 'bg-accent/20 text-emerald-200 border-emerald-800'
+                  : 'text-neutral-400 border-line hover:border-accent-soft'
+              }`}
+            >
+              分镜
+            </button>
+            <button
+              onClick={() => setView('characters')}
+              className={`text-xs px-3 py-1.5 rounded border ${
+                view === 'characters'
+                  ? 'bg-accent/20 text-emerald-200 border-emerald-800'
+                  : 'text-neutral-400 border-line hover:border-accent-soft'
+              }`}
+            >
+              人设库
+            </button>
+          </div>
 
-          {/* 分镜 */}
-          <main className="overflow-y-auto p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-300">分镜出图</h2>
-              <button onClick={addShot} className="text-[11px] text-accent hover:text-accent-soft">
-                + 添加分镜
-              </button>
-            </div>
-            {current.shots.length === 0 ? (
-              <p className="text-xs text-neutral-500">还没有分镜，点「+ 添加分镜」建一个，再「编辑」补提示词。</p>
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+            {view === 'shots' ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-neutral-300">分镜出图</h2>
+                  <button onClick={addShot} className="text-[11px] text-accent hover:text-accent-soft">
+                    + 添加分镜
+                  </button>
+                </div>
+                {current.shots.length === 0 ? (
+                  <p className="text-xs text-neutral-500">还没有分镜，点「+ 添加分镜」建一个，再「编辑」补提示词。</p>
+                ) : (
+                  current.shots.map((s) => (
+                    <ShotCard key={s.shotId} shot={s} count={count} characters={current.characters} />
+                  ))
+                )}
+              </>
             ) : (
-              current.shots.map((s) => (
-                <ShotCard key={s.shotId} shot={s} count={count} characters={current.characters} />
-              ))
+              <>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-neutral-300">人设库 · 一致性锚</h2>
+                  <button onClick={addCharacter} className="text-[11px] text-accent hover:text-accent-soft">
+                    + 添加角色
+                  </button>
+                </div>
+                {current.characters.length === 0 ? (
+                  <p className="text-xs text-neutral-500">还没有角色，点「+ 添加角色」建一个。</p>
+                ) : (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    {current.characters.map((c) => (
+                      <CharacterCard key={c.id} char={c} wide />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
-          </main>
+          </div>
         </div>
       )}
 

@@ -62,6 +62,7 @@ interface WorkbenchState {
   deleteCharacter: (characterId: string) => Promise<void>
   deleteCharacterRef: (characterId: string, refId: string) => Promise<void>
   lockCharacterRef: (characterId: string, refId: string) => Promise<void>
+  reorderCharacterRefs: (characterId: string, orderedRefIds: string[]) => Promise<void>
   deleteCandidate: (shotId: string, imageId: string) => Promise<void>
   deleteBaseCandidate: (characterId: string, url: string) => Promise<void>
 }
@@ -419,10 +420,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   deleteCharacter: async (characterId) => {
     const key = get().currentKey
     if (!key) return
-    if (!window.confirm(`删除角色「${characterId}」？它的参考图和分镜里的引用都会清掉，不可撤销。`)) return
+    const name = get().current?.characters.find((c) => c.id === characterId)?.name || characterId
+    if (!window.confirm(`删除角色「${name}」？它的参考图和分镜里的引用都会清掉，不可撤销。`)) return
     try {
       const { project } = await api.deleteCharacter({ key, characterId })
-      set({ current: project, notice: `已删除角色 ${characterId}。` })
+      set({ current: project, notice: `已删除角色 ${name}。` })
     } catch (e) {
       set({ error: (e as Error).message })
     }
@@ -445,6 +447,17 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const { project } = await api.lockCharacterRef({ key, characterId, refId })
       set({ current: project, notice: '已换锚点底图。' })
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  reorderCharacterRefs: async (characterId, orderedRefIds) => {
+    const key = get().currentKey
+    if (!key) return
+    try {
+      const { project } = await api.reorderCharacterRefs({ key, characterId, orderedRefIds })
+      set({ current: project })
     } catch (e) {
       set({ error: (e as Error).message })
     }

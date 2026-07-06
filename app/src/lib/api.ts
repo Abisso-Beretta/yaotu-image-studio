@@ -174,6 +174,9 @@ export const api = {
   lockCharacterRef: (body: { key: string; characterId: string; refId: string }) =>
     postJson<{ key: string; project: ImageProject }>('/api/project/character-ref/lock', body),
 
+  reorderCharacterRefs: (body: { key: string; characterId: string; orderedRefIds: string[] }) =>
+    postJson<{ key: string; project: ImageProject }>('/api/project/character-ref/reorder', body),
+
   deleteCandidate: (body: { key: string; shotId: string; imageId: string }) =>
     postJson<{ key: string; shotId: string; render: ProjectRender }>('/api/project/candidate/delete', body),
 
