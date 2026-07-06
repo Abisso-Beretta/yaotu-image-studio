@@ -1,7 +1,6 @@
 {
   "name": "yaotu-ui",
   "private": true,
-  "version": "0.1.7",
   "type": "module",
   "description": "妖荼 出图工具的新前端（Vite + React + TS + Tailwind + Zustand）。后端仍是仓库根目录的 server.js。",
   "scripts": {
