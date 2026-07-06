@@ -16,8 +16,6 @@ npm start
 
 然后打开 `http://localhost:8787/studio`。这是新的 React 界面（桌面版默认也是它），纯生图和漫剧工作台都在这里。
 
-旧版 vanilla-JS 界面仍保留在 `http://localhost:8787/`，如需回退可直接访问。
-
 ## 尺寸说明
 
 `gpt-image-2` 支持更多自定义尺寸，但需要满足这些约束：

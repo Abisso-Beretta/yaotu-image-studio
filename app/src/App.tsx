@@ -119,13 +119,6 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <ThemePicker />
-            <a
-              href="/"
-              className="text-xs text-neutral-500 hover:text-neutral-300"
-              title="打开旧版网页界面"
-            >
-              旧版
-            </a>
             <button
               onClick={openSettings}
               className="text-xs px-3 py-1.5 rounded-lg border border-line text-neutral-300 hover:text-neutral-100"

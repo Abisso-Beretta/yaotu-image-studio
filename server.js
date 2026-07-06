@@ -5,7 +5,6 @@ const { URL } = require("node:url");
 
 const rootDir = __dirname;
 const dataDir = path.resolve(process.env.YAOTU_DATA_DIR || rootDir);
-const publicDir = path.join(rootDir, "public");
 const outputDir = path.join(dataDir, "outputs");
 const styleReferenceDir = path.join(outputDir, "_style-references");
 const projectsDir = path.join(outputDir, "_projects");
@@ -226,18 +225,6 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
-    if (req.method === "POST" && requestUrl.pathname === "/api/manju/archive/export") {
-      const body = await readJson(req);
-      const result = exportManjuArchive(body);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && requestUrl.pathname === "/api/manju/script/split") {
-      const body = await readJson(req);
-      const result = await splitManjuScript(body);
-      return sendJson(res, 200, result);
-    }
-
     if (req.method === "POST" && requestUrl.pathname === "/api/generate") {
       const body = await readJson(req);
       const result = await generateImages(body);
@@ -347,8 +334,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "GET") {
-      const relativePath = requestUrl.pathname === "/" ? "index.html" : requestUrl.pathname.slice(1);
-      return serveFile(res, publicDir, relativePath);
+      // 旧版 vanilla-JS 页面已下线，所有未命中的 GET 统一重定向到新版 /studio。
+      res.writeHead(302, { Location: "/studio" });
+      return res.end();
     }
 
     sendJson(res, 405, { error: "Method not allowed" });
@@ -1402,7 +1390,6 @@ module.exports = {
   server,
   dataDir,
   outputDir,
-  publicDir,
   setUpdateController,
   resolveOutputUrl,
   importJobPackage,
@@ -1803,7 +1790,7 @@ function normalizeUpstreamApiErrorMessage(apiResponse, responseBody, responseTex
 
 // gpt-image 的 images / chat 端点不支持 negative_prompt 参数，把负面词以
 // "Avoid: ..." 文本追加进最终发送的提示词（与 responses 模式措辞一致）。
-// 注意：纯生图页前端（app/src/store/generator.ts 与 public/app.js 的 composePrompt）
+// 注意：纯生图页前端（app/src/store/generator.ts 的 composePrompt）
 // 会把负面词逐行嵌进 prompt 后再另传 negativePrompt，所以追加前逐行检查
 // prompt 是否已包含全部负面内容，避免双重拼接。
 function appendNegativePromptText(prompt, negativePrompt) {
@@ -2267,229 +2254,6 @@ function resolveOutputImageById(id) {
     fileName,
     filePath,
   };
-}
-
-function exportManjuArchive(input = {}) {
-  const title = normalizeOptionalText(input.title, 120) || "未命名漫剧";
-  const records = normalizeManjuArchiveExportRecords(input.archives);
-  if (records.length === 0) {
-    throw httpError(400, "No archived images to export.");
-  }
-
-  const exportedAt = new Date();
-  const exportId = `${sanitizeFileSegment(title, "未命名漫剧")}-${makeBatchId(exportedAt)}`;
-  const exportDir = path.join(outputDir, "manju-archives", exportId);
-  fs.mkdirSync(exportDir, { recursive: true });
-
-  const copied = [];
-  const skipped = [];
-
-  records.forEach((record, index) => {
-    try {
-      const source = resolveOutputImageById(record.imageId);
-      if (!fs.existsSync(source.filePath) || !fs.statSync(source.filePath).isFile()) {
-        skipped.push({ imageId: record.imageId, reason: "source image not found" });
-        return;
-      }
-
-      const category = MANJU_ARCHIVE_CATEGORIES[record.category] || MANJU_ARCHIVE_CATEGORIES[DEFAULT_MANJU_ARCHIVE_CATEGORY];
-      const categoryDir = path.join(exportDir, category.folder);
-      fs.mkdirSync(categoryDir, { recursive: true });
-
-      const extension = path.extname(source.fileName);
-      const baseName = path.basename(source.fileName, extension);
-      const notePart = sanitizeFileSegment(record.note || baseName, baseName);
-      const outputName = `${String(index + 1).padStart(3, "0")}-${notePart}${extension.toLowerCase()}`;
-      const targetPath = uniqueFilePath(categoryDir, outputName);
-      fs.copyFileSync(source.filePath, targetPath);
-
-      const metadata = readBatchMetadata(source.batchId);
-      copied.push({
-        imageId: source.safeId,
-        title: record.title || title,
-        category: record.category,
-        categoryLabel: category.label,
-        note: record.note,
-        shotNo: record.shotNo,
-        scene: record.scene,
-        queueId: record.queueId,
-        characterId: record.characterId,
-        characterName: record.characterName,
-        characters: record.characters,
-        sourceUrl: `/outputs/${encodeOutputPath(source.safeId)}`,
-        exportedPath: path.relative(exportDir, targetPath).split(path.sep).join("/"),
-        exportedUrl: outputUrlForFile(targetPath),
-        createdAt: metadata.createdAt || record.createdAt || "",
-        updatedAt: record.updatedAt || "",
-        prompt: metadata.request?.prompt || "",
-        request: makePublicRequest(metadata.request || {}),
-      });
-    } catch (error) {
-      skipped.push({ imageId: record.imageId, reason: error.message || String(error) });
-    }
-  });
-
-  const pack = normalizeManjuExportPack(input.pack, title);
-  const manifest = {
-    type: "yaotu-manju-archive",
-    version: 1,
-    title,
-    exportedAt: exportedAt.toISOString(),
-    promptPack: pack,
-    categories: Object.entries(MANJU_ARCHIVE_CATEGORIES).map(([value, meta]) => ({
-      value,
-      label: meta.label,
-      folder: meta.folder,
-      count: copied.filter((item) => item.category === value).length,
-    })),
-    images: copied,
-    skipped,
-  };
-
-  const manifestPath = path.join(exportDir, "manifest.json");
-  const promptPackPath = path.join(exportDir, "prompt-pack.txt");
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
-  fs.writeFileSync(promptPackPath, buildManjuPromptPackText(manifest), "utf8");
-
-  return {
-    title,
-    exportDir,
-    copied: copied.length,
-    skipped,
-    manifestUrl: outputUrlForFile(manifestPath),
-    promptPackUrl: outputUrlForFile(promptPackPath),
-  };
-}
-
-function normalizeManjuArchiveExportRecords(archives) {
-  if (!Array.isArray(archives)) {
-    return [];
-  }
-
-  return archives.slice(0, 1000)
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-      const imageId = String(item.imageId || "").trim();
-      if (!imageId) {
-        return null;
-      }
-      const category = MANJU_ARCHIVE_CATEGORIES[item.category] ? item.category : DEFAULT_MANJU_ARCHIVE_CATEGORY;
-      return {
-        imageId,
-        title: normalizeOptionalText(item.title, 120),
-        category,
-        note: normalizeOptionalText(item.note, 160),
-        shotNo: normalizeOptionalText(item.shotNo, 80),
-        scene: normalizeOptionalText(item.scene, 160),
-        queueId: normalizeOptionalText(item.queueId, 120),
-        characterId: normalizeOptionalText(item.characterId, 120),
-        characterName: normalizeOptionalText(item.characterName, 120),
-        characters: normalizeManjuContextCharacters(item.characters),
-        createdAt: normalizeOptionalText(item.createdAt, 64),
-        updatedAt: normalizeOptionalText(item.updatedAt, 64),
-      };
-    })
-    .filter(Boolean);
-}
-
-function normalizeManjuExportPack(pack, title) {
-  const source = pack && typeof pack === "object" ? pack : {};
-  return {
-    title,
-    formulaPreset: normalizeOptionalText(source.formulaPreset || source.activeFormulaPreset, 64),
-    scene: normalizeOptionalText(source.scene, 1000),
-    referenceStrategy: normalizeOptionalText(source.referenceStrategy, 200),
-    shotSize: normalizeOptionalText(source.shotSize, 80),
-    camera: normalizeOptionalText(source.camera, 80),
-    emotion: normalizeOptionalText(source.emotion, 500),
-    action: normalizeOptionalText(source.action, 500),
-    scenePack: normalizeOptionalText(source.scenePack, 5000),
-    stylePack: normalizeOptionalText(source.stylePack, 5000),
-    characterPack: normalizeOptionalText(source.characterPack, 5000),
-    characters: normalizeManjuExportCharacters(source.characters),
-    dialogue: normalizeOptionalText(source.dialogue, 3000),
-    formula: normalizeOptionalText(source.formula, 8000),
-    updatedAt: normalizeOptionalText(source.updatedAt, 64),
-  };
-}
-
-function normalizeManjuExportCharacters(characters) {
-  if (!Array.isArray(characters)) {
-    return [];
-  }
-  return characters.slice(0, 120)
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
-      const name = normalizeOptionalText(item.name, 120);
-      const prompt = normalizeOptionalText(item.prompt, 5000);
-      if (!name || !prompt) {
-        return null;
-      }
-      return {
-        name,
-        role: normalizeOptionalText(item.role, 500),
-        prompt,
-        updatedAt: normalizeOptionalText(item.updatedAt, 64),
-      };
-    })
-    .filter(Boolean);
-}
-
-function buildManjuPromptPackText(manifest) {
-  const pack = manifest.promptPack || {};
-  const lines = [
-    `剧名：${manifest.title}`,
-    `导出时间：${manifest.exportedAt}`,
-    "",
-    "【全局画风提示词包】",
-    pack.stylePack || "未填写",
-    "",
-    "【人设提示词包】",
-    pack.characterPack || "未填写",
-    "",
-    "【人设资料卡】",
-    ...(pack.characters?.length
-      ? pack.characters.map((card, index) => `${index + 1}. ${card.name}${card.role ? `（${card.role}）` : ""}\n${card.prompt}`)
-      : ["未保存角色卡"]),
-    "",
-    "【场景提示词包】",
-    pack.scenePack || "未填写",
-    "",
-    "【分镜提示词公式】",
-    pack.formula || "未填写",
-    "",
-    "【当前分镜字段】",
-    `场景：${pack.scene || "未填写"}`,
-    `参考策略：${pack.referenceStrategy || "未填写"}`,
-    `景别：${pack.shotSize || "未填写"}`,
-    `机位：${pack.camera || "未填写"}`,
-    `情绪：${pack.emotion || "未填写"}`,
-    `动作：${pack.action || "未填写"}`,
-    `对白/旁白：${pack.dialogue || "未填写"}`,
-    "",
-    "【图集统计】",
-    ...manifest.categories.map((category) => `${category.label}：${category.count} 张（${category.folder}）`),
-    "",
-    "【图片清单】",
-    ...manifest.images.map((image, index) => [
-      `${index + 1}. ${image.categoryLabel} / ${image.imageId}`,
-      `   镜号：${image.shotNo || "未记录"}`,
-      `   场景：${image.scene || "未记录"}`,
-      `   备注：${image.note || "无"}`,
-      `   导出文件：${image.exportedPath}`,
-      `   原提示词：${image.prompt || "无记录"}`,
-    ].join("\n")),
-  ];
-
-  if (manifest.skipped.length > 0) {
-    lines.push("", "【跳过项目】", ...manifest.skipped.map((item) => `${item.imageId}: ${item.reason}`));
-  }
-
-  return lines.join("\n");
 }
 
 function readBatchMetadata(batchId) {
@@ -3047,156 +2811,6 @@ async function listAuxiliaryModels(input) {
       hint: "If this relay does not expose /v1/models, keep typing the model id manually.",
     };
   }
-}
-
-async function splitManjuScript(input = {}) {
-  const title = normalizeOptionalText(input.title, 120) || "未命名漫剧";
-  const episodeNo = clampInteger(input.episodeNo, 1, 999, 1);
-  const scriptText = normalizeManjuScriptText(input.scriptText);
-  const config = input.auxiliary && typeof input.auxiliary === "object"
-    ? getAuxiliaryApiConfigFromInput(input.auxiliary)
-    : getAuxiliaryApiConfig();
-
-  if (!config.apiKey) {
-    throw httpError(401, "Auxiliary API key is missing.");
-  }
-
-  const messages = [
-    {
-      role: "system",
-      content: "You are a manju storyboard planner for an image-generation workbench. Return strict JSON only, no markdown, no explanations.",
-    },
-    {
-      role: "user",
-      content: buildManjuScriptSplitPrompt({
-        title,
-        episodeNo,
-        scriptText,
-        stylePack: input.stylePack,
-        characterCards: input.characterCards,
-      }),
-    },
-  ];
-
-  let responseBody;
-  try {
-    responseBody = await requestAuxiliaryChat(config, messages, { maxTokens: 6000 });
-  } catch (error) {
-    throw enrichAuxiliaryError(error, `辅助 API 拆分镜失败（${config.name || "辅助 API"} / ${config.model}）。`);
-  }
-  const text = extractTextFromModelResponse(responseBody).trim();
-  if (!text) {
-    throw httpError(502, "Auxiliary API returned no text.");
-  }
-
-  const parsed = parseJsonObjectFromText(text);
-  const pack = normalizeManjuScriptPack({
-    ...parsed,
-    title: parsed.title || title,
-    source: parsed.source || "yaotu-auxiliary-script-split",
-    scriptText: parsed.scriptText || scriptText,
-  }, { title, episodeNo, scriptText });
-  const shotCount = countManjuScriptShots(pack);
-
-  if (shotCount === 0) {
-    throw httpError(502, "Auxiliary API returned no usable shots.");
-  }
-
-  return {
-    model: config.model,
-    pack,
-    shotCount,
-  };
-}
-
-function normalizeManjuScriptText(value) {
-  const text = String(value || "").trim();
-  if (text.length < 20) {
-    throw httpError(400, "Script text is too short.");
-  }
-  if (text.length > 60000) {
-    throw httpError(400, "Script text is too long. Keep it below 60000 characters for one split.");
-  }
-  return text;
-}
-
-function buildManjuScriptSplitPrompt({ title, episodeNo, scriptText, stylePack, characterCards }) {
-  const characterHint = buildManjuCharacterHint(characterCards);
-  const styleHint = clipText(stylePack, 3000) || "未提供固定画风包。";
-  return [
-    `请把下面的漫剧剧本拆成“可直接用于生图”的分镜包。`,
-    "",
-    "要求：",
-    "1. 只返回一个 JSON 对象，不要 Markdown，不要解释。",
-    "2. 分镜要服务竖屏漫剧关键帧生图，不做视频剪辑，不生成字幕。",
-    "3. 每个 shot 只描述一个清晰画面动作，避免把连续动作塞进一镜。",
-    "4. dialogueRef 只作为情绪/剧情参考，不要要求画面里出现文字。",
-    "5. promptSeed 写成可接入生图公式的中文画面种子，包含主体、场景、动作、情绪、镜头。",
-    "6. 人物名尽量与已有人设卡一致；不确定时保留剧本文字里的称呼。",
-    "",
-    "JSON 结构必须是：",
-    JSON.stringify({
-      version: 1,
-      title,
-      source: "yaotu-auxiliary-script-split",
-      summary: "本集概要",
-      episodes: [
-        {
-          episodeNo,
-          title: `第${episodeNo}集`,
-          summary: "本集概要",
-          scenes: [
-            {
-              sceneNo: 1,
-              title: "场景标题",
-              location: "地点",
-              summary: "场景概要",
-              shots: [
-                {
-                  shotNo: `${episodeNo}-1-001`,
-                  characters: ["角色A", "角色B"],
-                  visual: "这一镜画面看到什么",
-                  action: "人物动作",
-                  emotion: "情绪/氛围",
-                  camera: "景别、机位、构图",
-                  dialogueRef: "对白/旁白参考，不入画",
-                  promptSeed: "竖屏漫剧关键帧，地点，角色，动作，情绪，镜头",
-                  notes: "连续性提示",
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    }, null, 2),
-    "",
-    "当前项目：",
-    `剧名：${title}`,
-    `集数：${episodeNo}`,
-    "",
-    "全局画风包参考：",
-    styleHint,
-    "",
-    "已有人设卡参考：",
-    characterHint,
-    "",
-    "待拆分剧本：",
-    scriptText,
-  ].join("\n");
-}
-
-function buildManjuCharacterHint(characterCards) {
-  if (!Array.isArray(characterCards) || characterCards.length === 0) {
-    return "未提供人设卡。";
-  }
-  const lines = characterCards.slice(0, 30)
-    .map((item, index) => {
-      const name = clipText(item?.name, 80) || `角色${index + 1}`;
-      const role = clipText(item?.role, 160);
-      const prompt = clipText(item?.prompt, 600);
-      return `${index + 1}. ${name}${role ? `（${role}）` : ""}${prompt ? `：${prompt}` : ""}`;
-    });
-  return lines.join("\n") || "未提供人设卡。";
 }
 
 function parseJsonObjectFromText(text) {

@@ -11,7 +11,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node --check server.js && node --check public/app.js && node --check public/manju.js && node --check desktop/main.js && node --check desktop/migration.js && node --check desktop/updater.js && node --check scripts/release.mjs && node --check scripts/pack.mjs",
+    "check": "node --check server.js && node --check desktop/main.js && node --check desktop/migration.js && node --check desktop/updater.js && node --check scripts/release.mjs && node --check scripts/pack.mjs",
     "desktop": "electron .",
     "build:ui": "cd app && npm install && npm run build",
     "build:dir": "npm run build:ui && electron-builder --dir --win --x64 --publish never",
@@ -37,7 +37,6 @@
     "files": [
       "server.js",
       "package.json",
-      "public/**/*",
       "app/dist/**/*",
       "desktop/**/*",
       "!api-profiles.json",
