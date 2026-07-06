@@ -133,6 +133,9 @@ export const api = {
   createProject: (body: { name: string; episode?: string }) =>
     postJson<{ key: string; project: ImageProject; summary: ProjectSummary }>('/api/project/create', body),
 
+  deleteProject: (body: { key: string }) =>
+    postJson<{ ok: boolean; projects: ProjectSummary[] }>('/api/project/delete', body),
+
   updateProjectSettings: (body: {
     key: string
     name?: string

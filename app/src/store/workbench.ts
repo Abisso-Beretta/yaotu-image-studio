@@ -37,6 +37,8 @@ interface WorkbenchState {
 
   // 编辑层
   createProject: (name: string, episode?: string) => Promise<void>
+  // 删除整个项目（连磁盘目录一起）。删的若是当前打开的项目，回到无项目状态。
+  deleteProject: (key: string) => Promise<void>
   // 项目级设置（名称/集号/风格/默认参数）。返回是否保存成功，弹层用它决定要不要关闭。
   updateSettings: (input: {
     name?: string
@@ -357,6 +359,22 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const { key, project } = await api.createProject({ name: clean, episode })
       set({ current: project, currentKey: key, notice: `已建空项目《${project.project.name}》。` })
+      await get().loadProjects()
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  deleteProject: async (key) => {
+    if (!key) return
+    set({ error: null, notice: null })
+    try {
+      await api.deleteProject({ key })
+      // 删的是当前打开的项目 → 清空 current/currentKey，回到无项目状态。
+      if (get().currentKey === key) {
+        set({ current: null, currentKey: null })
+      }
+      set({ notice: '已删除项目。' })
       await get().loadProjects()
     } catch (e) {
       set({ error: (e as Error).message })

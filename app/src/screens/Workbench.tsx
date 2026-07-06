@@ -650,6 +650,7 @@ export default function Workbench() {
     exportEpisode,
     openExportFolder,
     createProject,
+    deleteProject,
     upsertShot,
     upsertCharacter,
   } = useWorkbench()
@@ -674,6 +675,17 @@ export default function Workbench() {
     })
     if (!values || !values.name.trim()) return
     createProject(values.name.trim(), values.episode.trim())
+  }
+  function removeProject() {
+    if (!current || !currentKey) return
+    const label = `${current.project.name}${current.episode ? ` · ${current.episode}` : ''}`
+    if (
+      !window.confirm(
+        `删除项目「${label}」？\n它的全部分镜、角色、参考图和候选图会连同磁盘目录一起删掉，不可撤销。`,
+      )
+    )
+      return
+    deleteProject(currentKey)
   }
   function addShot() {
     upsertShot({ prompt: '' })
@@ -728,6 +740,16 @@ export default function Workbench() {
             className="text-sm px-3 py-2 rounded-lg border border-line text-neutral-200 hover:border-accent-soft"
           >
             项目设置
+          </button>
+        )}
+        {current && (
+          <button
+            onClick={removeProject}
+            disabled={batchRunning}
+            title={batchRunning ? '批量出图中不能删除项目' : '删除当前项目（连磁盘目录，不可撤销）'}
+            className="text-sm px-3 py-2 rounded-lg border border-red-900/60 text-red-300 hover:bg-red-950/40 disabled:opacity-50"
+          >
+            删除项目
           </button>
         )}
         {current && (

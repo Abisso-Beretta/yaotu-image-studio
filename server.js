@@ -285,6 +285,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/api/project/create") {
       return sendJson(res, 200, projectResponseForApi(await createEmptyProject(await readJson(req))));
     }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/delete") {
+      return sendJson(res, 200, await deleteProject(await readJson(req)));
+    }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/shot") {
       return sendJson(res, 200, projectResponseForApi(await upsertProjectShot(await readJson(req))));
     }
@@ -1133,6 +1136,25 @@ function createEmptyProject(input) {
     };
     writeProjectFile(key, project);
     return { key, project, summary: projectSummary(key, project) };
+  });
+}
+
+// 删除整个项目：把 outputs/_projects/<key>/ 连目录一并删掉，磁盘项目库里彻底移除。
+// 目录路径只经 projectDirFor 取（内部 projectSlug + resolve 校验，杜绝 ../ 穿越到
+// _projects 之外）；非法 / 空 key 直接 400，目录不存在则 404，绝不静默。
+// 走 enqueueProjectTask 串到该项目队列尾：等在途的读改写（生图 / 编辑）都跑完再删，
+// 不会删到一半被别的写操作重建目录。项目没有 getProject 内存缓存，删完无需清缓存
+//（projectTaskQueues 那条 Map 队列排空后自动清）。删完顺带回最新列表，前端可直接刷新。
+function deleteProject(input) {
+  const key = String(input?.key || "").trim();
+  if (!key) throw httpError(400, "缺少项目 key。");
+  const dir = projectDirFor(key); // 非法 key / 路径穿越在这里就 400
+  return enqueueProjectTask(key, () => {
+    if (!fs.existsSync(dir)) {
+      throw httpError(404, "项目不存在，可能已被删除。");
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { ok: true, projects: listProjects().projects };
   });
 }
 
