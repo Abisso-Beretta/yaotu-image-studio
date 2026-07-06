@@ -31,6 +31,19 @@ jobs:
       - name: Build web UI (/studio)
         run: npm run build:ui
 
+      - name: Ensure GitHub release exists (prevents electron-builder duplicate-release race)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists - reusing it."
+          else
+            echo "Pre-creating release $tag"
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "${tag#v}" --notes "Automated release $tag" --verify-tag
+          fi
+
       - name: Build and publish Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
