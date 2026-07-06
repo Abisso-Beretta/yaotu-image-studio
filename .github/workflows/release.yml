@@ -41,7 +41,7 @@ jobs:
             echo "Release $tag already exists - reusing it."
           else
             echo "Pre-creating release $tag"
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "${tag#v}" --notes "Automated release $tag" --verify-tag
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "${tag#v}" --generate-notes --verify-tag
           fi
 
       - name: Build and publish Windows installer
