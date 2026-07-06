@@ -28,6 +28,9 @@ jobs:
       - name: Check syntax
         run: npm run check
 
+      - name: Test
+        run: npm test
+
       - name: Build web UI (/studio)
         run: npm run build:ui
 

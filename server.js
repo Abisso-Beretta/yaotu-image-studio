@@ -1404,6 +1404,8 @@ module.exports = {
   outputDir,
   publicDir,
   setUpdateController,
+  resolveOutputUrl,
+  importJobPackage,
 };
 
 function setUpdateController(controller) {
