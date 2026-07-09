@@ -50,4 +50,8 @@ jobs:
       - name: Build and publish Windows installer
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Without this, re-running the workflow >2h after the release was
+          # created makes electron-builder silently skip all uploads
+          # (gitHubPublisher.js "published more than 2 hours ago" check).
+          EP_GH_IGNORE_TIME: "true"
         run: npx electron-builder --win nsis --x64 --publish always --config.directories.output=dist-installer
