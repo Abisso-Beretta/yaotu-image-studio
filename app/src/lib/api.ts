@@ -101,11 +101,21 @@ export const api = {
   getProject: (key: string) =>
     jsonFetch<{ key: string; project: ImageProject }>(`/api/project?key=${encodeURIComponent(key)}`),
 
-  addCharacterRef: (body: { key: string; characterId: string; dataUrl?: string; url?: string }) =>
+  addCharacterRef: (body: {
+    key: string
+    characterId: string
+    dataUrl?: string
+    url?: string
+    role?: string
+    formId?: string
+    label?: string
+    locked?: boolean
+    baseCandidateId?: string
+  }) =>
     postJson<{ key: string; project: ImageProject }>('/api/project/character-ref', body),
 
   generateCharacterBase: (
-    body: { key: string; characterId: string; count?: number },
+    body: { key: string; characterId: string; count?: number; formId?: string },
     signal?: AbortSignal,
   ) =>
     postJson<{ key: string; project: ImageProject }>(
@@ -154,6 +164,7 @@ export const api = {
       characterIds?: string[]
       shotType?: string
       scene?: string
+      characterForms?: Record<string, string>
     }
   }) => postJson<{ key: string; project: ImageProject }>('/api/project/shot', body),
 
@@ -183,8 +194,45 @@ export const api = {
   deleteCandidate: (body: { key: string; shotId: string; imageId: string }) =>
     postJson<{ key: string; shotId: string; render: ProjectRender }>('/api/project/candidate/delete', body),
 
-  deleteCharacterBaseCandidate: (body: { key: string; characterId: string; url: string }) =>
+  deleteCharacterBaseCandidate: (body: { key: string; characterId: string; url?: string; candidateId?: string }) =>
     postJson<{ key: string; project: ImageProject }>('/api/project/character-base-candidate/delete', body),
+
+  // 角色多形象 / 回收站
+  // 新增或修改角色的一个形象（不传 formId 表示新建）
+  upsertCharacterForm: (body: {
+    key: string
+    characterId: string
+    formId?: string
+    name?: string
+    imageLockPhrase?: string
+    note?: string
+  }) => postJson<{ key: string; project: ImageProject }>('/api/project/character-form', body),
+
+  // 删除角色的一个形象
+  deleteCharacterForm: (body: { key: string; characterId: string; formId: string }) =>
+    postJson<{ key: string; project: ImageProject }>('/api/project/character-form/delete', body),
+
+  // 更新单张参考图的属性（角色定位/标签/所属形象）
+  updateCharacterRef: (body: {
+    key: string
+    characterId: string
+    refId: string
+    role?: string
+    label?: string
+    formId?: string
+  }) => postJson<{ key: string; project: ImageProject }>('/api/project/character-ref/update', body),
+
+  // 批量删除参考图
+  deleteCharacterRefs: (body: { key: string; characterId: string; refIds: string[] }) =>
+    postJson<{ key: string; project: ImageProject }>('/api/project/character-refs/delete', body),
+
+  // 查询项目回收站占用（文件数与字节数）
+  getProjectTrashInfo: (body: { key: string }) =>
+    postJson<{ key: string; count: number; bytes: number }>('/api/project/trash/info', body),
+
+  // 清空项目回收站
+  emptyProjectTrash: (body: { key: string }) =>
+    postJson<{ key: string; ok: boolean }>('/api/project/trash/empty', body),
 
   optimizePrompt: (body: { prompt: string; negativePrompt?: string; mode: string }) =>
     postJson<OptimizeResult>('/api/optimize-prompt', body),

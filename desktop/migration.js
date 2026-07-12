@@ -126,6 +126,21 @@ function copyDirectoryContents(from, to, stats) {
     const targetPath = path.join(to, entry.name);
 
     if (entry.isDirectory()) {
+      // .trash/ 是项目回收站，任何深度出现都整个跳过：回收站文件名带时间戳，
+      // 合并复制几乎不会撞同名，用户刚清空的回收站计数会随旧安装残留复活。
+      if (entry.name === ".trash") {
+        stats.skipped += 1;
+        continue;
+      }
+      // _candidates/ 是 project.json 的私有候选副本，JSON 条目要和文件一起来。
+      // 只有目标项目整体还没迁移过（project.json 不存在）时才照常复制——这时
+      // project.json 会紧接着一起落地，候选文件不会孤立；目标项目目录已经有
+      // project.json（早先迁移过，或用户自己新建的）时再复制进候选文件，
+      // 没有任何 JSON 条目引用得到它，就成了 UI 回收不到的永久孤儿。
+      if (entry.name === "_candidates" && targetProjectHasProjectJson(to)) {
+        stats.skipped += 1;
+        continue;
+      }
       if (!fs.existsSync(targetPath)) {
         fs.mkdirSync(targetPath, { recursive: true });
         stats.directories += 1;
@@ -148,6 +163,14 @@ function copyDirectoryContents(from, to, stats) {
     fs.copyFileSync(sourcePath, targetPath);
     stats.files += 1;
   }
+}
+
+// _candidates/ 固定挂在 <项目根>/characters/<角色>/_candidates（见 server.js
+// copyFileIntoProject 的调用点），即当前正在遍历的目录（characters/<角色>）往上两级
+// 就是项目根；project.json 只会直接躺在项目根下。
+function targetProjectHasProjectJson(charDir) {
+  const projectRoot = path.dirname(path.dirname(charDir));
+  return isFile(path.join(projectRoot, "project.json"));
 }
 
 function loadState(dataDir) {

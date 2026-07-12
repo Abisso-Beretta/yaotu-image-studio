@@ -209,6 +209,26 @@ export interface ProjectRefImage {
   file: string
   role: string
   locked?: boolean
+  // 所属形象 id，缺省 = 'default'；比较统一用 (r.formId || 'default')
+  formId?: string
+  // 自由标签，如 "背面"
+  label?: string
+}
+
+// 角色的一个「形象」（如 夏装/兽形/性转）。'default' 保留给主形象。
+export interface ProjectCharacterForm {
+  id: string
+  name: string
+  imageLockPhrase?: string
+  note?: string
+}
+
+// 基准图候选：旧条目是全局图库 URL 字符串，新条目是持久化对象（file 在响应层已解析成 URL）
+export interface ProjectBaseCandidate {
+  id: string
+  file: string
+  formId?: string
+  createdAt?: string
 }
 
 export interface ProjectCharacter {
@@ -217,7 +237,9 @@ export interface ProjectCharacter {
   role?: string
   appearance?: { imageLockPhrase?: string }
   referenceImages?: ProjectRefImage[]
-  baseCandidates?: string[]
+  baseCandidates?: (string | ProjectBaseCandidate)[]
+  // 形象列表；缺省 = 只有 default 形象
+  forms?: ProjectCharacterForm[]
 }
 
 export interface ProjectShot {
@@ -230,6 +252,8 @@ export interface ProjectShot {
   promptEn?: string
   negative?: string
   characterIds: string[]
+  // charId → formId，缺省 default
+  characterForms?: Record<string, string>
 }
 
 export interface ProjectCandidate {

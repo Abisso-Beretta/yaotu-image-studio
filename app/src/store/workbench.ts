@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { api, fileToDataUrl, isAbortError } from '@/lib/api'
-import type { ExportResult, ImageProject, ProjectRender, ProjectSummary } from '@/types'
+import type { ExportResult, ImageProject, ProjectBaseCandidate, ProjectRender, ProjectSummary } from '@/types'
 
 interface WorkbenchState {
   projects: ProjectSummary[]
@@ -23,10 +23,14 @@ interface WorkbenchState {
   loadProjects: () => Promise<void>
   importPackageFile: (file: File) => Promise<void>
   openProject: (key: string) => Promise<void>
-  uploadCharacterRef: (characterId: string, file: File) => Promise<void>
-  generateCharacterBase: (characterId: string, count: number) => Promise<void>
+  uploadCharacterRef: (
+    characterId: string,
+    file: File,
+    opts?: { role?: string; formId?: string },
+  ) => Promise<void>
+  generateCharacterBase: (characterId: string, count: number, formId?: string) => Promise<void>
   cancelCharacterBase: (characterId: string) => void
-  lockCandidate: (characterId: string, url: string) => Promise<void>
+  lockCandidate: (characterId: string, cand: string | ProjectBaseCandidate) => Promise<void>
   generateShot: (shotId: string, count: number) => Promise<void>
   cancelShot: (shotId: string) => void
   chooseCandidate: (shotId: string, imageId: string | undefined) => Promise<void>
@@ -53,6 +57,7 @@ interface WorkbenchState {
     characterIds?: string[]
     shotType?: string
     scene?: string
+    characterForms?: Record<string, string>
   }, matchShotId?: string) => Promise<void>
   deleteShot: (shotId: string) => Promise<void>
   upsertCharacter: (input: {
@@ -66,7 +71,22 @@ interface WorkbenchState {
   lockCharacterRef: (characterId: string, refId: string) => Promise<void>
   reorderCharacterRefs: (characterId: string, orderedRefIds: string[]) => Promise<void>
   deleteCandidate: (shotId: string, imageId: string) => Promise<void>
-  deleteBaseCandidate: (characterId: string, url: string) => Promise<void>
+  deleteBaseCandidate: (characterId: string, cand: string | ProjectBaseCandidate) => Promise<void>
+
+  // 多形象 / 参考图属性 / 批量删除
+  upsertCharacterForm: (
+    characterId: string,
+    input: { formId?: string; name?: string; imageLockPhrase?: string; note?: string },
+  ) => Promise<void>
+  // 三个都返回是否成功（updateSettings 已有此先例）：调用方靠它决定要不要清掉自己的本地
+  // 状态（选中集合/activeFormId 等）——服务器 500 时不能假装成功清空，逼用户重勾/重选。
+  deleteCharacterForm: (characterId: string, formId: string) => Promise<boolean>
+  updateCharacterRef: (
+    characterId: string,
+    refId: string,
+    patch: { role?: string; label?: string; formId?: string },
+  ) => Promise<boolean>
+  deleteCharacterRefs: (characterId: string, refIds: string[]) => Promise<boolean>
 }
 
 function applyRender(project: ImageProject | null, render: ProjectRender): ImageProject | null {
@@ -153,26 +173,36 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  uploadCharacterRef: async (characterId, file) => {
+  uploadCharacterRef: async (characterId, file, opts) => {
     const key = get().currentKey
     if (!key) return
     try {
       const dataUrl = await fileToDataUrl(file)
-      const { project } = await api.addCharacterRef({ key, characterId, dataUrl })
-      set({ current: project, notice: '已锁定参考底图。' })
+      const { project } = await api.addCharacterRef({
+        key,
+        characterId,
+        dataUrl,
+        role: opts?.role,
+        formId: opts?.formId,
+      })
+      // 首张自动锁定由后端处理，这里不再宣称「已锁定」。
+      set({ current: project, notice: '已上传参考图。' })
     } catch (e) {
       set({ error: (e as Error).message })
     }
   },
 
-  generateCharacterBase: async (characterId, count) => {
+  generateCharacterBase: async (characterId, count, formId) => {
     const key = get().currentKey
     if (!key) return
     const controller = new AbortController()
     charControllers.set(characterId, controller)
     set((s) => ({ charBusy: { ...s.charBusy, [characterId]: true }, error: null, notice: null }))
     try {
-      const { project } = await api.generateCharacterBase({ key, characterId, count }, controller.signal)
+      const { project } = await api.generateCharacterBase(
+        { key, characterId, count, formId },
+        controller.signal,
+      )
       // 生图期间可能切了项目：current 已经是别的项目，丢弃 UI 更新
       //（服务端已正确落盘，切回来 openProject 就能看到）。
       if (get().currentKey === key) {
@@ -194,11 +224,19 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     charControllers.get(characterId)?.abort()
   },
 
-  lockCandidate: async (characterId, url) => {
+  lockCandidate: async (characterId, cand) => {
     const key = get().currentKey
     if (!key) return
     try {
-      const { project } = await api.addCharacterRef({ key, characterId, url })
+      // 旧字符串候选走 url；新对象候选走 baseCandidateId（formId 由后端从候选记录读取）。
+      // locked:true 必传：后端落锁规则是 sameForm.length===0 ? true : Boolean(input.locked)——
+      // 形象组已有参考图时不传就落 locked:false，旧锚点不会被这张新锁定的替换，
+      // 分镜生图仍会挂旧锚，和这里提示的「已锁定基准图」矛盾。
+      const { project } = await api.addCharacterRef(
+        typeof cand === 'string'
+          ? { key, characterId, url: cand, locked: true }
+          : { key, characterId, baseCandidateId: cand.id, locked: true },
+      )
       set({ current: project, notice: '已锁定基准图。' })
     } catch (e) {
       set({ error: (e as Error).message })
@@ -453,7 +491,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     if (!key) return
     try {
       const { project } = await api.deleteCharacterRef({ key, characterId, refId })
-      set({ current: project })
+      set({ current: project, notice: '已删除参考图，已移入回收站。' })
     } catch (e) {
       set({ error: (e as Error).message })
     }
@@ -492,15 +530,77 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  deleteBaseCandidate: async (characterId, url) => {
+  deleteBaseCandidate: async (characterId, cand) => {
     const key = get().currentKey
     if (!key) return
-    if (!window.confirm('删除这张候选图？')) return
+    if (!window.confirm('删除这张候选图？（候选已持久化，删除后不可恢复）')) return
     try {
-      const { project } = await api.deleteCharacterBaseCandidate({ key, characterId, url })
+      // 旧字符串候选按 url 删；新对象候选按 candidateId 删。
+      const { project } = await api.deleteCharacterBaseCandidate(
+        typeof cand === 'string'
+          ? { key, characterId, url: cand }
+          : { key, characterId, candidateId: cand.id },
+      )
       set({ current: project })
     } catch (e) {
       set({ error: (e as Error).message })
+    }
+  },
+
+  // ---- 多形象 / 参考图属性 / 批量删除 ----
+  upsertCharacterForm: async (characterId, input) => {
+    const key = get().currentKey
+    if (!key) return
+    set({ error: null })
+    try {
+      const { project } = await api.upsertCharacterForm({ key, characterId, ...input })
+      set({ current: project })
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  // 不在这里 confirm：UI 层做，因为确认文案要带形象名（store 里再查一遍是重复劳动）。
+  // 返回是否成功：服务器 500 时调用方不该把 activeFormId 重置回 default（形象根本没删掉）。
+  deleteCharacterForm: async (characterId, formId) => {
+    const key = get().currentKey
+    if (!key) return false
+    set({ error: null })
+    try {
+      const { project } = await api.deleteCharacterForm({ key, characterId, formId })
+      set({ current: project, notice: '已删除形象，其参考图已移入回收站。' })
+      return true
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
+    }
+  },
+
+  updateCharacterRef: async (characterId, refId, patch) => {
+    const key = get().currentKey
+    if (!key) return false
+    set({ error: null })
+    try {
+      const { project } = await api.updateCharacterRef({ key, characterId, refId, ...patch })
+      set({ current: project })
+      return true
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
+    }
+  },
+
+  deleteCharacterRefs: async (characterId, refIds) => {
+    const key = get().currentKey
+    if (!key) return false
+    set({ error: null })
+    try {
+      const { project } = await api.deleteCharacterRefs({ key, characterId, refIds })
+      set({ current: project, notice: `已删除 ${refIds.length} 张参考图，已移入回收站。` })
+      return true
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return false
     }
   },
 }))

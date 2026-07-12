@@ -287,11 +287,23 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character/delete") {
       return sendJson(res, 200, projectResponseForApi(await deleteProjectCharacter(await readJson(req))));
     }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-form") {
+      return sendJson(res, 200, projectResponseForApi(await upsertCharacterForm(await readJson(req))));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-form/delete") {
+      return sendJson(res, 200, projectResponseForApi(await deleteCharacterForm(await readJson(req))));
+    }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/delete") {
       return sendJson(res, 200, projectResponseForApi(await deleteProjectCharacterRef(await readJson(req))));
     }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-refs/delete") {
+      return sendJson(res, 200, projectResponseForApi(await deleteProjectCharacterRefs(await readJson(req))));
+    }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/lock") {
       return sendJson(res, 200, projectResponseForApi(await lockProjectCharacterRef(await readJson(req))));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/update") {
+      return sendJson(res, 200, projectResponseForApi(await updateProjectCharacterRef(await readJson(req))));
     }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/character-ref/reorder") {
       return sendJson(res, 200, projectResponseForApi(await reorderProjectCharacterRefs(await readJson(req))));
@@ -304,6 +316,12 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === "POST" && requestUrl.pathname === "/api/project/settings") {
       return sendJson(res, 200, projectResponseForApi(await updateProjectSettings(await readJson(req))));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/trash/info") {
+      return sendJson(res, 200, projectResponseForApi(getProjectTrashInfo(await readJson(req))));
+    }
+    if (req.method === "POST" && requestUrl.pathname === "/api/project/trash/empty") {
+      return sendJson(res, 200, projectResponseForApi(await emptyProjectTrash(await readJson(req))));
     }
 
     if (req.method === "POST" && requestUrl.pathname === "/api/analyze-image") {
@@ -522,6 +540,79 @@ function copyFileIntoProject(key, relDir, prefix, sourceDiskPath) {
   return `${relDir.split(path.sep).join("/")}/${fileName}`;
 }
 
+// ===== 角色多形象 + 参考图分组帮手 =====
+// 旧 project.json 的 ref 没有 formId 字段、character 没有 forms 字段，
+// 一律视为 default 形象——所有 formId 比较统一走 refFormId，无迁移直接可读。
+const REFERENCE_ROLE_VALUES = new Set(["base", "turnaround", "expression", "detail"]);
+
+function refFormId(ref) {
+  return (ref && ref.formId) || "default";
+}
+
+function characterFormIds(character) {
+  const ids = new Set(["default"]);
+  for (const form of Array.isArray(character?.forms) ? character.forms : []) {
+    ids.add(String(form.id));
+  }
+  return ids;
+}
+
+function normalizeRefRole(value) {
+  const role = String(value == null ? "" : value).trim();
+  if (!role) return "base";
+  if (!REFERENCE_ROLE_VALUES.has(role)) {
+    throw httpError(400, "参考图用途不合法（只支持 base / turnaround / expression / detail）。");
+  }
+  return role;
+}
+
+function validateFormId(character, value) {
+  const formId = String(value == null ? "" : value).trim();
+  if (!formId) return "default";
+  if (!characterFormIds(character).has(formId)) {
+    throw httpError(400, "形象不存在。");
+  }
+  return formId;
+}
+
+// 把文件或目录移进项目内回收站 <项目>/.trash/，返回移入后的绝对路径。
+// 不做 UI 级恢复：恢复 = 用户手动去 .trash 文件夹捞。
+function moveIntoProjectTrash(key, diskPath) {
+  const trashDir = path.join(projectDirFor(key), ".trash");
+  fs.mkdirSync(trashDir, { recursive: true });
+  const baseName = path.basename(diskPath);
+  const ts = Date.now();
+  let target = path.join(trashDir, `${ts}-${baseName}`);
+  // 同毫秒同名兜底：时间戳后递增序号，绝不覆盖回收站里已有的文件。
+  let n = 1;
+  while (fs.existsSync(target)) {
+    n += 1;
+    target = path.join(trashDir, `${ts}-${n}-${baseName}`);
+  }
+  try {
+    fs.renameSync(diskPath, target);
+  } catch {
+    // rename 失败（跨盘 EXDEV 等）兜底：复制再删源；目录要递归复制。
+    if (fs.statSync(diskPath).isDirectory()) {
+      fs.cpSync(diskPath, target, { recursive: true });
+      fs.rmSync(diskPath, { recursive: true, force: true });
+    } else {
+      fs.copyFileSync(diskPath, target);
+      fs.unlinkSync(diskPath);
+    }
+  }
+  return target;
+}
+
+// 锚补位：该 formId 组内还有参考图但没有锚点 → 组内第一张补成锚点（就地改）。
+// 删除 / 跨形象移动之后调用，维持「组内有图必有锚」的自洽语义。
+function ensureFormAnchor(refs, formId) {
+  const sameForm = refs.filter((r) => refFormId(r) === formId);
+  if (sameForm.length && !sameForm.some((r) => r.locked)) {
+    sameForm[0].locked = true;
+  }
+}
+
 function resolveRenderFilesInPlace(key, renders) {
   for (const render of Array.isArray(renders) ? renders : []) {
     for (const cand of Array.isArray(render?.candidates) ? render.candidates : []) {
@@ -531,10 +622,10 @@ function resolveRenderFilesInPlace(key, renders) {
 }
 
 // 深拷贝 project 并把所有 file 字段解析成 URL。
-// baseCandidates 是转瞬字段（全局批次 URL、不在契约里），URL 原样透传，但
-// 文件已被图库删掉的死链（resolveOutputUrl 为 null）在响应边界剔除，
-// 工作台不再显示裂图。只过滤深拷贝，不写盘——持久清理在 generateCharacterBase
-// 合并新候选（本来就要写盘）时顺手做。
+// baseCandidates 是新旧混合数组：旧字符串条目（全局批次 URL、不在契约里）沿用
+// 死链过滤 + 原样透传；新对象条目（持久化在项目 _candidates/）把 file 解析成
+// URL、文件已不存在的过滤掉。只过滤深拷贝，不写盘——持久清理在
+// generateCharacterBase 合并新候选（本来就要写盘）时顺手做。
 function projectForResponse(key, project) {
   const clone = JSON.parse(JSON.stringify(project));
   const characters = Array.isArray(clone.characters) ? clone.characters : [];
@@ -546,7 +637,13 @@ function projectForResponse(key, project) {
   }
   for (const character of characters) {
     if (Array.isArray(character?.baseCandidates)) {
-      character.baseCandidates = character.baseCandidates.filter((url) => resolveOutputUrl(url) !== null);
+      character.baseCandidates = character.baseCandidates
+        .filter((entry) => typeof entry === "string"
+          ? resolveOutputUrl(entry) !== null
+          : entry && projectFileDiskPath(key, entry.file) !== null)
+        .map((entry) => typeof entry === "string"
+          ? entry
+          : { ...entry, file: resolveProjectFileUrl(key, entry.file) });
     }
   }
   resolveRenderFilesInPlace(key, clone.renders);
@@ -653,10 +750,37 @@ function importJobPackage(pkg) {
     const existing = readProjectFile(key);
     const existingChars = new Map((existing?.characters || []).map((c) => [c.id, c]));
 
-    const characters = (Array.isArray(pkg.characters) ? pkg.characters : []).map((c) => ({
-      ...c,
-      referenceImages: existingChars.get(c.id)?.referenceImages || [],
-    }));
+    // 重导（同一任务包再次导入）只能覆盖 Scriptwriter 产出的字段；forms / baseCandidates
+    // 是妖荼侧编辑层数据，包里天然没有，必须从旧角色 carry over（与 referenceImages 同方式），
+    // 否则带 formId 的参考图/候选变孤儿（见 IMPORT-LOSS 复盘）。
+    const characters = (Array.isArray(pkg.characters) ? pkg.characters : []).map((c) => {
+      const prior = existingChars.get(c.id);
+      return {
+        ...c,
+        referenceImages: prior?.referenceImages || [],
+        forms: prior?.forms || [],
+        baseCandidates: prior?.baseCandidates || [],
+      };
+    });
+    const charsById = new Map(characters.map((c) => [c.id, c]));
+
+    // shot.characterForms 同理是妖荼侧编辑层字段，Scriptwriter 包不产出，重建 shots 时
+    // 按 shotId 从旧项目 carry over；清洗掉新 shot 已不再关联的角色、以及形象已被删除
+    // （不在合并后角色 forms 里）的条目，避免残留指向不存在形象的悬空 formId。
+    const existingShotsById = new Map((existing?.shots || []).map((s) => [String(s.shotId || ""), s]));
+    for (const shot of shots) {
+      const priorForms = existingShotsById.get(String(shot.shotId || ""))?.characterForms;
+      if (!priorForms || typeof priorForms !== "object") continue;
+      const idSet = new Set(shot.characterIds);
+      const cleaned = {};
+      for (const [cid, formId] of Object.entries(priorForms)) {
+        if (!idSet.has(cid)) continue;
+        const char = charsById.get(cid);
+        if (!char || !characterFormIds(char).has(String(formId))) continue;
+        cleaned[cid] = formId;
+      }
+      if (Object.keys(cleaned).length > 0) shot.characterForms = cleaned;
+    }
 
     // §6 defaults.size 由 medium 推导兜底；包里给了非空 size 才覆盖。
     const medium = pkg.project.medium || "vertical";
@@ -696,7 +820,35 @@ async function addProjectCharacterRef(input) {
       throw httpError(404, "角色不存在。");
     }
 
-    const resolved = await resolveReferenceImage({ dataUrl: input.dataUrl, url: input.url });
+    const role = normalizeRefRole(input.role);
+    // 锁定基准图候选（新对象条目）时：显式 formId 优先，否则继承候选条目的 formId。
+    let candidateEntry = null;
+    if (input.baseCandidateId != null) {
+      const candidateId = String(input.baseCandidateId);
+      candidateEntry = (Array.isArray(character.baseCandidates) ? character.baseCandidates : [])
+        .find((c) => typeof c === "object" && c !== null && c.id === candidateId) || null;
+      if (!candidateEntry) {
+        throw httpError(404, "基准图候选不存在。");
+      }
+    }
+    const formId = input.formId != null && String(input.formId).trim()
+      ? validateFormId(character, input.formId)
+      : validateFormId(character, candidateEntry?.formId);
+
+    // 图源：锁定候选且没传 dataUrl/url → 直接读项目 _candidates/ 里的副本；否则照旧解析。
+    let resolved;
+    if (candidateEntry && input.dataUrl == null && input.url == null) {
+      const candDisk = projectFileDiskPath(key, candidateEntry.file);
+      if (!candDisk) {
+        throw httpError(400, "候选文件已不在。");
+      }
+      resolved = {
+        buffer: fs.readFileSync(candDisk),
+        mimeType: mimeFromExtension(path.extname(candDisk)),
+      };
+    } else {
+      resolved = await resolveReferenceImage({ dataUrl: input.dataUrl, url: input.url });
+    }
     if (!resolved) {
       throw httpError(400, "参考图读取失败。");
     }
@@ -720,21 +872,51 @@ async function addProjectCharacterRef(input) {
     } while (fs.existsSync(path.join(dir, fileName)));
     fs.writeFileSync(path.join(dir, fileName), resolved.buffer);
 
+    // 锁定候选成功落成 ref 后：候选条目剔除、_candidates/ 副本真删（已复制成 ref，
+    // 不进回收站）；其余候选保留。
+    if (candidateEntry) {
+      const candDisk = projectFileDiskPath(key, candidateEntry.file);
+      if (candDisk) {
+        try { fs.unlinkSync(candDisk); } catch { /* 文件已不在就算了 */ }
+      }
+      character.baseCandidates = (character.baseCandidates || []).filter((c) => c !== candidateEntry);
+    }
+
+    // ref id 防撞：锁定候选 + 上传可能落在同一毫秒，撞了就追加递增后缀。
+    const idBase = `${charId}-${Date.now()}`;
+    let refIdValue = idBase;
+    let idSeq = 1;
+    while (refs.some((r) => r.id === refIdValue)) {
+      idSeq += 1;
+      refIdValue = `${idBase}-${idSeq}`;
+    }
+
     // 契约 §2：project.json 里存项目文件夹内相对路径（zip 自包含），响应层再解析成 URL。
+    // formId 为 default 不落字段（旧数据一致性）；锚点互斥只在同形象组内。
     const relPath = `characters/${projectSlug(charId)}/${fileName}`;
+    const sameForm = refs.filter((r) => refFormId(r) === formId);
+    const labelText = input.label != null ? String(input.label).trim() : "";
     const refImage = {
-      id: `${charId}-${Date.now()}`,
+      id: refIdValue,
       file: relPath,
-      role: String(input.role || "base"),
-      locked: refs.length === 0 ? true : Boolean(input.locked),
+      role,
+      ...(formId !== "default" ? { formId } : {}),
+      ...(labelText ? { label: labelText } : {}),
+      locked: sameForm.length === 0 ? true : Boolean(input.locked),
       createdAt: new Date().toISOString(),
     };
-    character.referenceImages = (refImage.locked ? refs.map((r) => ({ ...r, locked: false })) : refs).concat(refImage);
+    character.referenceImages = (refImage.locked
+      ? refs.map((r) => (refFormId(r) === formId ? { ...r, locked: false } : r))
+      : refs
+    ).concat(refImage);
   });
 }
 
 // 用角色外貌锚点 + 全局画风生成「基准图候选」，存进 character.baseCandidates，
 // 用户挑一张后再走 addProjectCharacterRef 落盘锁定。
+// baseCandidates 不再是纯转瞬字段：新候选复制进项目 characters/<角色>/_candidates/
+// 持久化（对象条目 { id, file, formId?, createdAt }），旧字符串 URL 条目继续兼容；
+// 但 _candidates/ 仍不在交接契约里（不进导出，见 exportProject 注释）。
 // 生图要跑几十秒~几分钟：只在开头从快照抽出生图输入（不持有 project 引用跨越 await），
 // 完成后经 withProject 重新读最新 project 合并，避免整份覆盖掉生图期间的用户编辑。
 async function generateCharacterBase(input) {
@@ -744,7 +926,15 @@ async function generateCharacterBase(input) {
   if (!character) {
     throw httpError(404, "角色不存在。");
   }
-  const lock = character.appearance?.imageLockPhrase || character.name;
+  const formId = validateFormId(character, input.formId);
+  // 锁定句逐级回退：非 default 形象条目的锚点句 → default 形象条目的锚点句
+  // → 角色外貌锚点 → 角色名。
+  const forms = Array.isArray(character.forms) ? character.forms : [];
+  const formLock = formId !== "default"
+    ? String(forms.find((f) => String(f.id) === formId)?.imageLockPhrase || "").trim()
+    : "";
+  const defaultFormLock = String(forms.find((f) => String(f.id) === "default")?.imageLockPhrase || "").trim();
+  const lock = formLock || defaultFormLock || character.appearance?.imageLockPhrase || character.name;
   if (!lock) {
     throw httpError(400, "这个角色没有外貌锚点，没法生成基准图。");
   }
@@ -774,17 +964,54 @@ async function generateCharacterBase(input) {
         warning: "角色在生图期间被删除：候选图已生成并保留在 outputs/ 目录，但没有写入项目。",
       };
     }
-    // baseCandidates 是转瞬字段（挑一张锁定后即弃），不在交接契约（shared/job-package.ts）里，
-    // 所以保持全局批次 URL 形态不落项目文件夹；用户点「锁定」时 addProjectCharacterRef
-    // 才把选中那张复制进 characters/<角色>/ 并按契约存相对路径。
-    // 合并前顺手把旧数组里文件已被图库删掉的死链清掉（本次反正要写盘，零成本；
-    // 平时死链只在 projectForResponse 响应层过滤，不落盘）。
+    // 新候选**复制**进项目 characters/<角色>/_candidates/ 持久化（批次源文件保留），
+    // JSON 存对象条目 { id, file, formId?, createdAt }；万一批次文件已丢
+    // （resolveOutputUrl 为 null），退回存旧字符串 URL 条目，不丢候选。
+    const stamp = Date.now();
+    // id 撞现有 baseCandidates 就追加后缀递增（仿参考图 id 的防撞写法，见
+    // addProjectCharacterRef 里的 idBase/idSeq）：同角色两批合并回调在队列里背靠背
+    // 执行、落在同一毫秒时，光靠时间戳+批内序号防不住撞 id——deleteCharacterBaseCandidate
+    // 用 find 只 unlink 第一个匹配的文件，filter 却把两个同 id 条目一起剔除，
+    // 第二个条目的 _candidates/ 文件就成了永久孤儿。
+    const existingCandidateIds = new Set(
+      (Array.isArray(target.baseCandidates) ? target.baseCandidates : [])
+        .filter((c) => typeof c === "object" && c !== null)
+        .map((c) => c.id)
+    );
+    const fresh = result.images.map((img, i) => {
+      const diskPath = resolveOutputUrl(img.url);
+      if (!diskPath) return img.url;
+      let candidateId = `cand-${stamp}-${i + 1}`;
+      let idSeq = 1;
+      while (existingCandidateIds.has(candidateId)) {
+        idSeq += 1;
+        candidateId = `cand-${stamp}-${i + 1}-${idSeq}`;
+      }
+      existingCandidateIds.add(candidateId);
+      return {
+        id: candidateId,
+        file: copyFileIntoProject(ctx.key, `characters/${projectSlug(charId)}/_candidates`, `cand-${stamp}`, diskPath),
+        ...(formId !== "default" ? { formId } : {}),
+        createdAt: result.createdAt,
+      };
+    });
+    // 合并前顺手清理旧数组（本次反正要写盘，零成本；平时死链只在响应层过滤）：
+    // 字符串条目沿用死链过滤；对象条目按项目 _candidates/ 文件是否还在过滤。
     const alive = (Array.isArray(target.baseCandidates) ? target.baseCandidates : [])
-      .filter((url) => resolveOutputUrl(url) !== null);
-    target.baseCandidates = [
-      ...result.images.map((img) => img.url),
-      ...alive,
-    ].slice(0, 12);
+      .filter((entry) => typeof entry === "string"
+        ? resolveOutputUrl(entry) !== null
+        : entry && projectFileDiskPath(ctx.key, entry.file) !== null);
+    const merged = [...fresh, ...alive];
+    target.baseCandidates = merged.slice(0, 12);
+    // 被 12 张上限挤掉的对象条目真删 _candidates/ 文件——孤儿文件别堆积；
+    // 字符串条目照旧只丢数组（文件归全局图库管）。
+    for (const dropped of merged.slice(12)) {
+      if (typeof dropped === "string") continue;
+      const disk = projectFileDiskPath(ctx.key, dropped.file);
+      if (disk) {
+        try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+      }
+    }
   });
 }
 
@@ -806,7 +1033,23 @@ async function generateProjectShot(input) {
     for (const cid of Array.isArray(shot.characterIds) ? shot.characterIds : []) {
       const ch = (snapshot.characters || []).find((c) => c.id === cid);
       const refs = Array.isArray(ch?.referenceImages) ? ch.referenceImages : [];
-      const ref = refs.find((r) => r.locked) || refs[0];
+      // 分镜可按角色指定形象（shot.characterForms[cid]），缺省 default。
+      // 选择顺序逐级回退：该形象内锚点 → 该形象内第一张 → default 形象锚点
+      // → default 形象第一张 → 全局兜底（该角色任意形象的锚点/第一张）；
+      // 分组比较统一走 refFormId（旧数据无 formId 视为 default）。
+      // 全局兜底是必须的：角色参考图可能全在命名形象里（比如直接给「战斗形态」锁了
+      // 基准图，default 组从没图），分镜又没设 characterForms（Scriptwriter 包天然
+      // 没这字段）——没有它这一镜会一张参考图都不挂，且没有任何警告（行为回归自
+      // 旧代码 refs.find(locked)||refs[0]：只要角色有图就挂一张）。
+      const formId = (shot.characterForms && shot.characterForms[cid]) || "default";
+      const formRefs = refs.filter((r) => refFormId(r) === formId);
+      const defaultRefs = refs.filter((r) => refFormId(r) === "default");
+      const ref = formRefs.find((r) => r.locked)
+        || formRefs[0]
+        || defaultRefs.find((r) => r.locked)
+        || defaultRefs[0]
+        || refs.find((r) => r.locked)
+        || refs[0];
       if (ref?.file) {
         // ref.file 磁盘上存契约相对路径（旧数据可能还是 /outputs/ URL），
         // 先解析成 URL 再交给 resolveReferenceImage（它只认 /outputs/、http、data:）。
@@ -910,6 +1153,16 @@ function upsertProjectShot(input) {
     const cleanIds = Array.isArray(patch.characterIds)
       ? patch.characterIds.map((c) => String(c)).filter(Boolean)
       : undefined;
+    // characterForms（角色 id → 该镜使用的形象 id）清洗：只保留最终 characterIds
+    // 里还在的键，值统一转字符串；清洗完为空就不落字段。
+    const cleanForms = (finalIds) => {
+      if (!patch.characterForms || typeof patch.characterForms !== "object") return undefined;
+      const out = {};
+      for (const [cid, fid] of Object.entries(patch.characterForms)) {
+        if (finalIds.includes(cid)) out[cid] = String(fid);
+      }
+      return Object.keys(out).length ? out : undefined;
+    };
 
     if (existing) {
       if (patch.prompt != null) existing.prompt = String(patch.prompt);
@@ -917,6 +1170,14 @@ function upsertProjectShot(input) {
       if (patch.shotType != null) existing.shotType = String(patch.shotType);
       if (patch.scene != null) existing.scene = String(patch.scene);
       if (cleanIds) existing.characterIds = cleanIds;
+      if (patch.characterForms && typeof patch.characterForms === "object") {
+        const forms = cleanForms(cleanIds ?? existing.characterIds ?? []);
+        if (forms) {
+          existing.characterForms = forms;
+        } else {
+          delete existing.characterForms;
+        }
+      }
       // 改镜号：同步 renders 的 shotId
       const nextId = patch.shotId != null ? String(patch.shotId).trim() : existing.shotId;
       if (nextId && nextId !== existing.shotId) {
@@ -932,6 +1193,7 @@ function upsertProjectShot(input) {
       if (shots.some((s) => s.shotId === newId)) {
         throw httpError(409, "已有同名镜号，换一个。");
       }
+      const newForms = cleanForms(cleanIds || []);
       shots.push({
         shotId: newId,
         prompt: patch.prompt != null ? String(patch.prompt) : "",
@@ -939,6 +1201,7 @@ function upsertProjectShot(input) {
         shotType: patch.shotType != null ? String(patch.shotType) : "",
         scene: patch.scene != null ? String(patch.scene) : "",
         characterIds: cleanIds || [],
+        ...(newForms ? { characterForms: newForms } : {}),
       });
     }
     project.shots = shots;
@@ -981,20 +1244,103 @@ function upsertProjectCharacter(input) {
   });
 }
 
+// 角色多形象（战斗形态 / 便装等）：forms 数组存 { id, name, imageLockPhrase, note }。
+// 'default' 是隐含的主形象，forms 里可以没有条目；给主形象起名/写锚点句时才落一条
+// id 为 'default' 的条目。旧 project.json 没有 forms 字段，视为只有 default 形象。
+function upsertCharacterForm(input) {
+  return withProject(input.key, (project) => {
+    const charId = String(input.characterId || "");
+    const character = (project.characters || []).find((c) => c.id === charId);
+    if (!character) throw httpError(404, "角色不存在。");
+    const forms = Array.isArray(character.forms) ? character.forms : [];
+
+    let target;
+    if (input.formId != null && String(input.formId).trim()) {
+      const formId = String(input.formId).trim();
+      target = forms.find((f) => String(f.id) === formId);
+      if (!target && formId === "default") {
+        // default 允许首次 upsert 时补建条目（给主形象起名/写锚点句）。
+        target = { id: "default", name: input.name != null ? String(input.name) : "主形象" };
+        forms.push(target);
+      }
+      if (!target) throw httpError(404, "形象不存在。");
+    } else {
+      const name = String(input.name || "").trim();
+      if (!name) throw httpError(400, "形象需要一个名字。");
+      // id 撞名策略与 upsertProjectCharacter 一致：撞了追加时间戳。
+      const slug = projectSlug(name);
+      const id = slug === "default" || forms.some((f) => String(f.id) === slug) ? `${slug}-${Date.now()}` : slug;
+      target = { id, name };
+      forms.push(target);
+    }
+
+    if (input.name != null) target.name = String(input.name);
+    if (input.imageLockPhrase != null) target.imageLockPhrase = String(input.imageLockPhrase);
+    if (input.note != null) target.note = String(input.note);
+    character.forms = forms;
+  });
+}
+
+function deleteCharacterForm(input) {
+  return withProject(input.key, (project, ctx) => {
+    const charId = String(input.characterId || "");
+    const character = (project.characters || []).find((c) => c.id === charId);
+    if (!character) throw httpError(404, "角色不存在。");
+    const formId = String(input.formId || "");
+    if (formId === "default") throw httpError(400, "主形象不能删除。");
+    const forms = Array.isArray(character.forms) ? character.forms : [];
+    if (!forms.some((f) => String(f.id) === formId)) throw httpError(404, "形象不存在。");
+    character.forms = forms.filter((f) => String(f.id) !== formId);
+    // 该形象的参考图一并移进回收站并从数组剔除。
+    const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+    for (const ref of refs) {
+      if (refFormId(ref) !== formId) continue;
+      const disk = ref.file ? projectFileDiskPath(ctx.key, ref.file) : null;
+      if (disk) {
+        try { moveIntoProjectTrash(ctx.key, disk); } catch { /* 文件已不在就算了 */ }
+      }
+    }
+    character.referenceImages = refs.filter((r) => refFormId(r) !== formId);
+    // 该形象的基准图候选一并清理：残留候选会在 UI 卡死——点「锁定」时
+    // validateFormId(候选.formId) 对已删形象一律 400。对象条目挪进回收站
+    // （与参考图同处理，不真删），字符串旧格式条目没有 formId 字段，天然不匹配。
+    const candidates = Array.isArray(character.baseCandidates) ? character.baseCandidates : [];
+    for (const cand of candidates) {
+      if (typeof cand !== "object" || cand === null || cand.formId !== formId) continue;
+      const disk = projectFileDiskPath(ctx.key, cand.file);
+      if (disk) {
+        try { moveIntoProjectTrash(ctx.key, disk); } catch { /* 文件已不在就算了 */ }
+      }
+    }
+    character.baseCandidates = candidates.filter((c) => !(typeof c === "object" && c !== null && c.formId === formId));
+    // shots[].characterForms 里指向这个形象的条目一并清掉：不然 ShotEditor 的受控
+    // select 悬空、预检误报「形象不存在」、出图时静默回退，脏键还会随导出包持久化。
+    for (const s of Array.isArray(project.shots) ? project.shots : []) {
+      if (s.characterForms && s.characterForms[charId] === formId) {
+        delete s.characterForms[charId];
+      }
+    }
+  });
+}
+
 function deleteProjectCharacter(input) {
   return withProject(input.key, (project, ctx) => {
     const charId = String(input.characterId || "");
     project.characters = (Array.isArray(project.characters) ? project.characters : []).filter((c) => c.id !== charId);
-    // 删磁盘上的参考图目录
+    // 角色的参考图目录整个移进项目回收站（不再直接删，误删可去 .trash 手动捞）
     try {
       const dir = path.join(projectDirFor(ctx.key), "characters", projectSlug(charId));
-      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+      if (fs.existsSync(dir)) moveIntoProjectTrash(ctx.key, dir);
     } catch {
-      // 目录删不掉不阻断
+      // 目录移不动不阻断
     }
-    // 从所有分镜里剔除该角色
+    // 从所有分镜里剔除该角色；characterForms[charId] 键也一并删——不然角色都没了，
+    // 这个脏键还会跟着 characterIds 清空后继续留在 shots 里，随导出包持久化。
     for (const s of Array.isArray(project.shots) ? project.shots : []) {
       if (Array.isArray(s.characterIds)) s.characterIds = s.characterIds.filter((c) => c !== charId);
+      if (s.characterForms && Object.prototype.hasOwnProperty.call(s.characterForms, charId)) {
+        delete s.characterForms[charId];
+      }
     }
   });
 }
@@ -1008,16 +1354,40 @@ function deleteProjectCharacterRef(input) {
     const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
     const target = refs.find((r) => r.id === refId);
     if (target?.file) {
-      // 兼容契约相对路径 + 旧 /outputs/ URL 两种形态
+      // 兼容契约相对路径 + 旧 /outputs/ URL 两种形态；删除改走项目回收站
       const disk = projectFileDiskPath(ctx.key, target.file);
       if (disk) {
-        try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+        try { moveIntoProjectTrash(ctx.key, disk); } catch { /* 文件已不在就算了 */ }
       }
     }
-    let remaining = refs.filter((r) => r.id !== refId);
-    // 删掉的是锚点 → 把剩下的第一张补成锚点
-    if (target?.locked && remaining.length && !remaining.some((r) => r.locked)) {
-      remaining = remaining.map((r, i) => ({ ...r, locked: i === 0 }));
+    const remaining = refs.filter((r) => r.id !== refId);
+    // 锚点补位按 target 所在形象组内做（锚已升级为每形象一个）
+    if (target) ensureFormAnchor(remaining, refFormId(target));
+    character.referenceImages = remaining;
+  });
+}
+
+// 批量删参考图：一次 withProject 做完，避免逐张请求排队 + 中途失败留半截。
+function deleteProjectCharacterRefs(input) {
+  return withProject(input.key, (project, ctx) => {
+    const charId = String(input.characterId || "");
+    const character = (project.characters || []).find((c) => c.id === charId);
+    if (!character) throw httpError(404, "角色不存在。");
+    const ids = new Set((Array.isArray(input.refIds) ? input.refIds : []).map(String));
+    const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+    const affectedForms = new Set();
+    for (const ref of refs) {
+      if (!ids.has(ref.id)) continue;
+      affectedForms.add(refFormId(ref));
+      const disk = ref.file ? projectFileDiskPath(ctx.key, ref.file) : null;
+      if (disk) {
+        try { moveIntoProjectTrash(ctx.key, disk); } catch { /* 文件已不在就算了 */ }
+      }
+    }
+    const remaining = refs.filter((r) => !ids.has(r.id));
+    // 每个被波及的形象组分别补锚
+    for (const formId of affectedForms) {
+      ensureFormAnchor(remaining, formId);
     }
     character.referenceImages = remaining;
   });
@@ -1030,8 +1400,54 @@ function lockProjectCharacterRef(input) {
     const character = (project.characters || []).find((c) => c.id === charId);
     if (!character) throw httpError(404, "角色不存在。");
     const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
-    if (!refs.some((r) => r.id === refId)) throw httpError(404, "参考图不存在。");
-    character.referenceImages = refs.map((r) => ({ ...r, locked: r.id === refId }));
+    const target = refs.find((r) => r.id === refId);
+    if (!target) throw httpError(404, "参考图不存在。");
+    // 锚点已升级为每形象一个：互斥只在目标 ref 所在形象组内，其他组的锚不动。
+    character.referenceImages = refs.map((r) =>
+      refFormId(r) === refFormId(target) ? { ...r, locked: r.id === refId } : r
+    );
+  });
+}
+
+// 改参考图元数据：role / label / formId（跨形象移动会维护两边的锚点）。
+function updateProjectCharacterRef(input) {
+  return withProject(input.key, (project) => {
+    const charId = String(input.characterId || "");
+    const refId = String(input.refId || "");
+    const character = (project.characters || []).find((c) => c.id === charId);
+    if (!character) throw httpError(404, "角色不存在。");
+    const refs = Array.isArray(character.referenceImages) ? character.referenceImages : [];
+    const target = refs.find((r) => r.id === refId);
+    if (!target) throw httpError(404, "参考图不存在。");
+
+    // normalizeRefRole 对 null 返回 'base'，所以必须先判 input.role != null 再调，
+    // 否则「不传 role」会被误改回 base。
+    if (input.role != null) target.role = normalizeRefRole(input.role);
+    if (input.label != null) {
+      const labelText = String(input.label).trim();
+      if (labelText) {
+        target.label = labelText;
+      } else {
+        delete target.label; // 空串表示清除标签
+      }
+    }
+    if (input.formId != null) {
+      const newForm = validateFormId(character, input.formId);
+      const oldForm = refFormId(target);
+      if (newForm !== oldForm) {
+        // 跨形象移动的锁维护顺序：先落 formId，再处理进入组的锚，最后给离开组补锚。
+        if (newForm === "default") {
+          delete target.formId; // default 不落字段（旧数据一致性）
+        } else {
+          target.formId = newForm;
+        }
+        // 进入组已有锚 → target 让位；进入组没锚 → target 补成锚（组内必有锚的自洽语义）。
+        const newFormHasAnchor = refs.some((r) => r !== target && refFormId(r) === newForm && r.locked);
+        target.locked = !newFormHasAnchor;
+        // 离开组还有图但没锚 → 第一张补位。
+        ensureFormAnchor(refs, oldForm);
+      }
+    }
   });
 }
 
@@ -1073,10 +1489,10 @@ function deleteProjectCandidate(input) {
     if (!render) throw httpError(404, "这一镜还没有候选图。");
     const target = (render.candidates || []).find((c) => c.imageId === imageId);
     if (target?.file) {
-      // 兼容契约相对路径 + 旧 /outputs/ URL 两种形态
+      // 兼容契约相对路径 + 旧 /outputs/ URL 两种形态；删除改走项目回收站
       const disk = projectFileDiskPath(ctx.key, target.file);
       if (disk) {
-        try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+        try { moveIntoProjectTrash(ctx.key, disk); } catch { /* 文件已不在就算了 */ }
       }
     }
     render.candidates = (render.candidates || []).filter((c) => c.imageId !== imageId);
@@ -1087,17 +1503,66 @@ function deleteProjectCandidate(input) {
 }
 
 function deleteCharacterBaseCandidate(input) {
-  return withProject(input.key, (project) => {
+  return withProject(input.key, (project, ctx) => {
     const charId = String(input.characterId || "");
-    const url = String(input.url || "");
     const character = (project.characters || []).find((c) => c.id === charId);
     if (!character) throw httpError(404, "角色不存在。");
-    // 只从 baseCandidates 数组移除，不删磁盘文件：候选是全局图库批次里的图
+    const candidates = Array.isArray(character.baseCandidates) ? character.baseCandidates : [];
+    // 新格式按 candidateId 删：对象条目剔除 + 真删项目 _candidates/ 里的副本
+    // （候选是项目私有副本，不是全局图库的图）。
+    if (input.candidateId != null) {
+      const candidateId = String(input.candidateId);
+      const target = candidates.find((c) => typeof c === "object" && c !== null && c.id === candidateId);
+      if (target) {
+        const disk = projectFileDiskPath(ctx.key, target.file);
+        if (disk) {
+          try { fs.unlinkSync(disk); } catch { /* 文件已不在就算了 */ }
+        }
+      }
+      // 找不到也静默成功——幂等，重复点删除/并发删除不报错。
+      character.baseCandidates = candidates.filter((c) => !(typeof c === "object" && c !== null && c.id === candidateId));
+      return;
+    }
+    // 旧格式按 url 删：只从数组移除，不删磁盘文件——候选是全局图库批次里的图
     // （/outputs/<batchId>/xx.png），文件归图库管（deleteImages），和分镜候选
     // （项目文件夹私有副本、删条目连文件一起删）不同。
     // url 不在数组里也静默成功——幂等，重复点删除/并发删除不报错。
-    character.baseCandidates = (Array.isArray(character.baseCandidates) ? character.baseCandidates : [])
-      .filter((u) => u !== url);
+    const url = String(input.url || "");
+    character.baseCandidates = candidates.filter((c) => !(typeof c === "string" && c === url));
+  });
+}
+
+// ===== 项目回收站 =====
+// 删除的参考图/候选/角色目录都移进 <项目>/.trash/。不做 UI 级恢复：
+// 恢复 = 用户手动去 .trash 文件夹捞；这两个端点只提供占用统计和一键清空。
+
+// 纯读统计，不改盘，不必进项目队列。
+function getProjectTrashInfo(input) {
+  const { key } = getProject(input.key); // 项目不存在直接 404
+  const trashDir = path.join(projectDirFor(key), ".trash");
+  let count = 0;
+  let bytes = 0;
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (entry.isFile()) {
+        count += 1;
+        bytes += fs.statSync(full).size;
+      }
+    }
+  };
+  if (fs.existsSync(trashDir)) walk(trashDir);
+  return { key, count, bytes };
+}
+
+// 清空走 withProject 串行：避免和正在移入回收站的删除操作赛跑。
+function emptyProjectTrash(input) {
+  return withProject(input.key, (project, ctx) => {
+    fs.rmSync(path.join(projectDirFor(ctx.key), ".trash"), { recursive: true, force: true });
+    ctx.skipWrite = true; // 没改 project.json，不用写盘
+    return { key: ctx.key, ok: true };
   });
 }
 
@@ -1212,6 +1677,7 @@ function validateProjectDefaultSize(value) {
 }
 
 // 按集导出：把每镜的定稿按分镜顺序复制成编号文件 + manifest.json
+// _candidates/、.trash/ 不会进导出——导出只按 renders 里的定稿逐张复制，不整目录复制。
 function exportProject(input) {
   const { project } = getProject(input.key);
   const key = projectSlug(input.key);
@@ -1278,6 +1744,8 @@ function openProjectExportFolder(input) {
 //  B. 本项目 URL "/outputs/_projects/<本项目>/characters/..."（旧 addProjectCharacterRef）
 //     → 文件本来就在项目文件夹里，只把 JSON 去前缀改成相对路径，不复制。
 // 幂等：已是相对路径的条目跳过；源文件不存在的保留原值并 log（响应层 URL 透传仍可兜底）。
+// 只迁移 JSON 里的条目（renders candidates + referenceImages），不扫目录，
+// .trash/_candidates 无碍；不处理 baseCandidates（旧字符串 URL 形态不迁移，响应层透传兜底）。
 // 每个项目走 enqueueProjectTask，与启动后到达的 API 请求在同一条队列里互斥。
 function migrateProjectFilesToProjectDirs() {
   if (!fs.existsSync(projectsDir)) {

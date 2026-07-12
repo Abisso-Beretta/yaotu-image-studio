@@ -18,6 +18,9 @@
 //
 //  类型 Appearance / Personality / Character / ShotRow / Medium 与 niuma-producer
 //  的 src/types/index.ts 一致（可直接复用），下面只在其上做最小扩展。
+//
+//  本次扩展点为第 4 节妖荼侧私有字段（CharacterForm / ReferenceImage.formId+label /
+//  ImageCharacter.forms / ImageShot.characterForms），全部 additive，schemaVersion 保持 1.0。
 // ============================================================================
 
 export const JOB_PACKAGE_SCHEMA_VERSION = '1.0';
@@ -110,6 +113,9 @@ export interface ImageShot extends ShotRow {
   characterIds: string[];
   /** 可选：关联的场景资产 id。 */
   sceneId?: string;
+  /** 妖荼侧编辑层字段，Scriptwriter 不产出：charId → formId，
+   *  指定这一镜里角色用哪个形象出参考图，缺省 default。 */
+  characterForms?: Record<string, string>;
 }
 
 /** 全局风格锁定。来自 Scriptwriter 的视觉风格库。 */
@@ -154,19 +160,35 @@ export interface ImageJobPackage {
 
 export type ReferenceRole = 'base' | 'turnaround' | 'expression' | 'detail';
 
+/** 角色的一个「形象」（如 夏装/兽形/性转）。'default' 保留给主形象。 */
+export interface CharacterForm {
+  id: string;            // 'default' 保留给主形象
+  name: string;          // 如 "主形象" / "夏装" / "兽形" / "性转"
+  /** 该形象的外貌锚点句；default 形象回退到 appearance.imageLockPhrase。 */
+  imageLockPhrase?: string;
+  note?: string;
+}
+
 export interface ReferenceImage {
   id: string;
   /** 项目文件夹内的相对路径，如 "characters/林安/base-01.png"。永远是文件，不是 base64。 */
   file: string;
   role: ReferenceRole;
-  /** 锁定的基准图 = 该角色权威一致性锚，出图时优先挂它。 */
+  /** 锁定的基准图 = 该形象内的权威一致性锚，同一 formId 内唯一，出图时优先挂它。 */
   locked?: boolean;
+  /** 所属形象 id，缺省 = 'default'。旧数据无此字段天然全属 default，
+   *  所有比较统一用 `(r.formId || 'default')`。 */
+  formId?: string;
+  /** 自由标签，如 "背面"。 */
+  label?: string;
   createdAt?: string;
 }
 
 /** Character + 视觉参考图。出图工具在导入的 Character 上补这一层。 */
 export interface ImageCharacter extends Character {
   referenceImages?: ReferenceImage[];
+  /** 该角色的形象列表；缺省 = 只有 default 形象。 */
+  forms?: CharacterForm[];
 }
 
 export interface SceneAsset {

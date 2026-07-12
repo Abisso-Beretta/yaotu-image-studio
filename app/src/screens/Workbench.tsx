@@ -2,270 +2,9 @@ import { useEffect, useState } from 'react'
 import { useWorkbench } from '@/store/workbench'
 import Lightbox from '@/components/Lightbox'
 import { openPrompt, openPromptFields } from '@/components/PromptDialog'
+import { api } from '@/lib/api'
+import CharacterCard from './workbench/CharacterCard'
 import type { ProjectCharacter, ProjectShot } from '@/types'
-
-function CharacterCard({ char, wide }: { char: ProjectCharacter; wide?: boolean }) {
-  const uploadCharacterRef = useWorkbench((s) => s.uploadCharacterRef)
-  const generateCharacterBase = useWorkbench((s) => s.generateCharacterBase)
-  const cancelCharacterBase = useWorkbench((s) => s.cancelCharacterBase)
-  const lockCandidate = useWorkbench((s) => s.lockCandidate)
-  const deleteBaseCandidate = useWorkbench((s) => s.deleteBaseCandidate)
-  const deleteCharacterRef = useWorkbench((s) => s.deleteCharacterRef)
-  const lockCharacterRef = useWorkbench((s) => s.lockCharacterRef)
-  const reorderCharacterRefs = useWorkbench((s) => s.reorderCharacterRefs)
-  const upsertCharacter = useWorkbench((s) => s.upsertCharacter)
-  const deleteCharacter = useWorkbench((s) => s.deleteCharacter)
-  const busy = useWorkbench((s) => s.charBusy[char.id])
-  const refs = char.referenceImages || []
-  const candidates = char.baseCandidates || []
-
-  const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(char.name)
-  const [role, setRole] = useState(char.role || '')
-  const [lock, setLock] = useState(char.appearance?.imageLockPhrase || '')
-  // 放大审片：候选缩略图太小看不清细节，点 ⤢ 用 Lightbox 打开（可左右切换同角色候选）
-  const [zoom, setZoom] = useState<number | null>(null)
-  // 参考图放大：⤢ 用 Lightbox 打开这个角色的全部参考图
-  const [refZoom, setRefZoom] = useState<number | null>(null)
-
-  function startEdit() {
-    setName(char.name)
-    setRole(char.role || '')
-    setLock(char.appearance?.imageLockPhrase || '')
-    setEditing(true)
-  }
-  async function save() {
-    await upsertCharacter({ characterId: char.id, name, role, imageLockPhrase: lock })
-    setEditing(false)
-  }
-  // 参考图排序：把第 i 张移到 i+dir，算出新顺序调 reorder 接口持久化（锚点不必在首位，只影响展示次序）
-  function moveRef(i: number, dir: -1 | 1) {
-    const j = i + dir
-    if (j < 0 || j >= refs.length) return
-    const next = refs.slice()
-    ;[next[i], next[j]] = [next[j], next[i]]
-    reorderCharacterRefs(char.id, next.map((r) => r.id))
-  }
-
-  return (
-    <div className="rounded-lg border border-line bg-panel p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="text-sm font-semibold text-neutral-100">{char.name}</span>
-          {char.role && <span className="text-xs text-neutral-500 ml-2">{char.role}</span>}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {refs.length === 0 ? (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-900/50">
-              未锁底图
-            </span>
-          ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-900/50">
-              已锁 {refs.length}
-            </span>
-          )}
-          <button onClick={startEdit} className="text-[11px] text-neutral-400 hover:text-neutral-200">
-            编辑
-          </button>
-          <button
-            onClick={() => deleteCharacter(char.id)}
-            className="text-[11px] text-red-400/80 hover:text-red-300"
-          >
-            删除
-          </button>
-        </div>
-      </div>
-
-      {editing && (
-        <div className="space-y-1.5 rounded border border-line bg-black/20 p-2">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="角色名"
-            className="w-full text-xs"
-          />
-          <input
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            placeholder="定位/身份（可空）"
-            className="w-full text-xs"
-          />
-          <textarea
-            value={lock}
-            onChange={(e) => setLock(e.target.value)}
-            placeholder="外貌锚点句（imageLockPhrase）——生成基准图和一致性靠它"
-            rows={2}
-            className="w-full text-xs"
-          />
-          <div className="flex gap-2 justify-end">
-            <button onClick={() => setEditing(false)} className="text-[11px] text-neutral-400 hover:text-neutral-200">
-              取消
-            </button>
-            <button onClick={save} className="text-[11px] px-2 py-0.5 rounded bg-accent text-white hover:bg-accent-soft">
-              保存
-            </button>
-          </div>
-        </div>
-      )}
-
-      {refs.length > 0 && (
-        <div>
-        <div className={`grid ${wide ? 'grid-cols-6' : 'grid-cols-4'} gap-1.5`}>
-          {refs.map((r, i) => (
-            <div key={r.id} className="relative group">
-              <img
-                src={r.file}
-                alt=""
-                className={`w-full aspect-square object-cover rounded border border-line${
-                  r.locked ? ' ring-2 ring-emerald-400' : ''
-                }`}
-              />
-              {r.locked ? (
-                <span className="absolute top-0.5 left-0.5 text-[9px] px-1 rounded bg-black/70 text-emerald-300">
-                  锚
-                </span>
-              ) : (
-                <button
-                  onClick={() => lockCharacterRef(char.id, r.id)}
-                  title="设为锚点底图"
-                  className="absolute top-0.5 left-0.5 text-[9px] px-1 rounded bg-black/60 text-neutral-300 opacity-0 group-hover:opacity-100 hover:text-emerald-300"
-                >
-                  设锚
-                </button>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setRefZoom(i)
-                }}
-                title="放大查看"
-                className="absolute top-0.5 right-5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-200 opacity-0 group-hover:opacity-100 hover:bg-black/90"
-              >
-                ⤢
-              </button>
-              <button
-                onClick={() => deleteCharacterRef(char.id, r.id)}
-                title="删除这张参考图"
-                className="absolute top-0.5 right-0.5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
-              >
-                ×
-              </button>
-              <div className="absolute inset-x-0 bottom-0.5 flex items-center justify-between px-0.5">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    moveRef(i, -1)
-                  }}
-                  disabled={i === 0}
-                  title="前移"
-                  className="text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-300 opacity-0 group-hover:opacity-100 hover:text-neutral-100 disabled:opacity-20"
-                >
-                  ◀
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    moveRef(i, 1)
-                  }}
-                  disabled={i === refs.length - 1}
-                  title="后移"
-                  className="text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-300 opacity-0 group-hover:opacity-100 hover:text-neutral-100 disabled:opacity-20"
-                >
-                  ▶
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-          {refZoom !== null && (
-            <Lightbox
-              images={refs.map((r) => ({ id: r.id, url: r.file }))}
-              index={Math.min(refZoom, refs.length - 1)}
-              onIndexChange={setRefZoom}
-              onClose={() => setRefZoom(null)}
-            />
-          )}
-        </div>
-      )}
-      {candidates.length > 0 && (
-        <div>
-          <p className="text-[11px] text-neutral-500 mb-1">基准图候选（点一张锁定）</p>
-          <div className={`grid ${wide ? 'grid-cols-6' : 'grid-cols-4'} gap-1.5`}>
-            {candidates.map((url, i) => (
-              <div key={url} className="relative group">
-                <button
-                  onClick={() => lockCandidate(char.id, url)}
-                  title="锁定为基准图"
-                  className="block w-full rounded overflow-hidden border-2 border-transparent hover:border-accent-soft"
-                >
-                  <img src={url} alt="" className="w-full aspect-square object-cover" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setZoom(i)
-                  }}
-                  title="放大查看"
-                  className="absolute top-0.5 right-5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-neutral-200 opacity-0 group-hover:opacity-100 hover:bg-black/90"
-                >
-                  ⤢
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    deleteBaseCandidate(char.id, url)
-                  }}
-                  title="删除这张候选"
-                  className="absolute top-0.5 right-0.5 text-[10px] w-4 h-4 leading-none rounded bg-black/70 text-red-300 opacity-0 group-hover:opacity-100 hover:bg-red-900/80"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-          {zoom !== null && (
-            <Lightbox
-              images={candidates.map((u) => ({ id: u, url: u }))}
-              index={Math.min(zoom, candidates.length - 1)}
-              onIndexChange={setZoom}
-              onClose={() => setZoom(null)}
-            />
-          )}
-        </div>
-      )}
-      <div className="grid grid-cols-2 gap-2">
-        {busy ? (
-          <button
-            onClick={() => cancelCharacterBase(char.id)}
-            title="中断等待（服务端可能仍在完成本次生成并计费）"
-            className="text-xs py-1.5 rounded border border-red-900/60 text-red-300 hover:bg-red-950/40"
-          >
-            取消生成
-          </button>
-        ) : (
-          <button
-            onClick={() => generateCharacterBase(char.id, 2)}
-            className="text-xs py-1.5 rounded bg-accent hover:bg-accent-soft text-white"
-          >
-            生成基准图
-          </button>
-        )}
-        <label className="block text-center text-xs py-1.5 rounded border border-dashed border-line text-neutral-400 hover:border-accent-soft hover:text-neutral-200 cursor-pointer">
-          上传基准图
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            hidden
-            onChange={(e) => {
-              if (e.target.files?.[0]) uploadCharacterRef(char.id, e.target.files[0])
-              e.target.value = ''
-            }}
-          />
-        </label>
-      </div>
-    </div>
-  )
-}
 
 function ShotEditor({
   shot,
@@ -281,13 +20,21 @@ function ShotEditor({
   const [prompt, setPrompt] = useState(shot.prompt || '')
   const [negative, setNegative] = useState(shot.negative || '')
   const [ids, setIds] = useState<string[]>(shot.characterIds || [])
+  // charId → formId 的出场形象选择；只记非 default，缺省即主形象
+  const [formSel, setFormSel] = useState<Record<string, string>>(shot.characterForms || {})
 
   function toggle(id: string) {
     setIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
   }
   async function save() {
+    // 后端对 characterForms 是整体替换语义，所以总是传（哪怕空对象）——
+    // 不传的话取消选择的形象清不掉。default 不落库，缺省 = 主形象。
+    const characterForms: Record<string, string> = {}
+    for (const id of ids) {
+      if (formSel[id] && formSel[id] !== 'default') characterForms[id] = formSel[id]
+    }
     await upsertShot(
-      { shotId: shotId.trim() || undefined, prompt, negative, characterIds: ids },
+      { shotId: shotId.trim() || undefined, prompt, negative, characterIds: ids, characterForms },
       shot.shotId,
     )
     onDone()
@@ -314,26 +61,47 @@ function ShotEditor({
         <input value={negative} onChange={(e) => setNegative(e.target.value)} className="w-full text-xs mt-0.5" />
       </label>
       <div>
-        <p className="text-[11px] text-neutral-500 mb-1">出场角色（勾选后出图自动挂其锚点底图）</p>
+        <p className="text-[11px] text-neutral-500 mb-1">出场角色（勾选后出图自动挂其锚点底图；多形象角色可选出场形象）</p>
         {characters.length === 0 ? (
           <p className="text-[11px] text-neutral-600">还没有角色，先去左侧人设库加。</p>
         ) : (
           <div className="flex flex-wrap gap-1.5">
             {characters.map((c) => {
               const on = ids.includes(c.id)
+              // 只有多形象角色（存在非 default 形象）才给下拉；单形象没得选，不渲染
+              const multiForm = (c.forms || []).some((f) => f.id !== 'default')
+              const defaultName = (c.forms || []).find((f) => f.id === 'default')?.name || '主形象'
               return (
-                <button
-                  key={c.id}
-                  onClick={() => toggle(c.id)}
-                  className={`text-[11px] px-2 py-0.5 rounded border ${
-                    on
-                      ? 'bg-accent/25 text-emerald-200 border-emerald-800'
-                      : 'text-neutral-400 border-line hover:border-accent-soft'
-                  }`}
-                >
-                  {on ? '✓ ' : ''}
-                  {c.name}
-                </button>
+                <span key={c.id} className="flex items-center gap-1">
+                  <button
+                    onClick={() => toggle(c.id)}
+                    className={`text-[11px] px-2 py-0.5 rounded border ${
+                      on
+                        ? 'bg-accent/25 text-emerald-200 border-emerald-800'
+                        : 'text-neutral-400 border-line hover:border-accent-soft'
+                    }`}
+                  >
+                    {on ? '✓ ' : ''}
+                    {c.name}
+                  </button>
+                  {on && multiForm && (
+                    <select
+                      value={formSel[c.id] || 'default'}
+                      onChange={(e) => setFormSel((cur) => ({ ...cur, [c.id]: e.target.value }))}
+                      title="出场形象"
+                      className="text-[11px]"
+                    >
+                      <option value="default">{defaultName}</option>
+                      {(c.forms || [])
+                        .filter((f) => f.id !== 'default')
+                        .map((f) => (
+                          <option key={f.id} value={f.id}>
+                            {f.name}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </span>
               )
             })}
           </div>
@@ -373,6 +141,24 @@ function ShotCard({
   // 放大审片：候选点击主体仍是定稿/取消，⤢ 才是放大（Lightbox 可左右切换同镜候选）
   const [zoom, setZoom] = useState<number | null>(null)
   const render = current?.renders?.find((r) => r.shotId === shot.shotId)
+  // 出图预检：以后端实际行为为准（server.js generateProjectShot 的 FALLBACK-GAP 修复后，
+  // 回退链是 该形象锚点→该形象第一张→default形象锚点→default形象第一张→全局兜底
+  // (角色任意形象的锚点/第一张)——只要角色 referenceImages 整体不为空，出图就一定会挂上
+  // 一张参考图。真正「出图不会挂参考」只有角色完全没图这一种情况，才亮强警示。
+  const missing = shot.characterIds
+    .map((cid) => characters.find((x) => x.id === cid))
+    .filter((c): c is ProjectCharacter => !!c)
+    .filter((c) => (c.referenceImages || []).length === 0)
+  // 二级弱提示：角色有图，但所选形象组（缺省 default）本身没图——不算「未锁底图」，后端
+  // 兜底会挂该角色其他形象的参考图，只是可能不是这一镜想要的那个形象，弱提示即可。
+  const formEmpty = shot.characterIds
+    .map((cid) => characters.find((x) => x.id === cid))
+    .filter((c): c is ProjectCharacter => !!c)
+    .filter((c) => (c.referenceImages || []).length > 0)
+    .filter((c) => {
+      const formId = shot.characterForms?.[c.id] || 'default'
+      return !(c.referenceImages || []).some((r) => (r.formId || 'default') === formId)
+    })
 
   return (
     <div className="rounded-lg border border-line bg-panel p-3 space-y-2">
@@ -392,6 +178,22 @@ function ShotCard({
         )}
         <div className="ml-auto flex items-center gap-2">
           {!shot.prompt && <span className="text-[11px] text-amber-400">无提示词</span>}
+          {missing.length > 0 && (
+            <span
+              className="text-[11px] text-amber-400"
+              title={'未锁底图：' + missing.map((c) => c.name).join('、')}
+            >
+              ⚠ {missing.length} 角色未锁底图
+            </span>
+          )}
+          {formEmpty.length > 0 && (
+            <span
+              className="text-[11px] text-neutral-500"
+              title={'该形象无图，出图将回退挂该角色其他形象的参考图：' + formEmpty.map((c) => c.name).join('、')}
+            >
+              ℹ {formEmpty.length} 角色形象无图
+            </span>
+          )}
           <button
             onClick={() => setEditing((v) => !v)}
             className="text-[11px] text-neutral-400 hover:text-neutral-200"
@@ -570,6 +372,7 @@ function ProjectSettingsModal({ onClose }: { onClose: () => void }) {
             placeholder="如：国漫厚涂风格，电影感打光，高细节…"
             className="w-full text-xs mt-0.5"
           />
+          <p className="text-[10px] text-neutral-500 mt-0.5">全项目画风，不是角色外貌——角色外貌写在人设库各形象的「外貌锚点句」里。</p>
         </label>
         <label className="block text-[11px] text-neutral-500">
           通用负面（分镜没写反向词时用它）
@@ -627,6 +430,93 @@ function ProjectSettingsModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// 人设库标题行的回收站入口：显示当前项目回收站（.trash 目录）占用，可一键清空。
+// 计数拉取失败保持静默——回收站只是辅助信息，不值得打断主流程报错。
+function TrashButton() {
+  const currentKey = useWorkbench((s) => s.currentKey)
+  const current = useWorkbench((s) => s.current)
+  const [info, setInfo] = useState<{ count: number; bytes: number } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!currentKey) {
+      setInfo(null)
+      return
+    }
+    // 请求发出后项目可能已切换（甚至又切回来）：ignore 标志防止晚到的响应覆盖当前项目的计数
+    // ——A 项目删图触发请求后立刻切到 B，A 的响应后到会把按钮/confirm 显示成 A 的条数，
+    // 清空却清的是 B 的 .trash，不可恢复。
+    let ignore = false
+    api
+      .getProjectTrashInfo({ key: currentKey })
+      .then((r) => {
+        if (ignore) return
+        setInfo({ count: r.count, bytes: r.bytes })
+      })
+      .catch(() => {
+        if (!ignore) setInfo(null)
+      })
+    return () => {
+      ignore = true
+    }
+    // 刻意依赖 current 引用：删参考图/形象后 store 会换新的 current 对象，
+    // 这里跟着重新拉一次，计数自动跟上，不用手动刷新。
+  }, [currentKey, current])
+
+  function fmt(bytes: number) {
+    return bytes >= 0.1 * 1024 * 1024
+      ? (bytes / 1048576).toFixed(1) + ' MB'
+      : Math.max(1, Math.ceil(bytes / 1024)) + ' KB'
+  }
+
+  async function empty() {
+    if (!currentKey || !info || info.count === 0 || busy) return
+    const key = currentKey
+    if (
+      !window.confirm(
+        `清空回收站？共 ${info.count} 项 ${fmt(info.bytes)}，清空后不可恢复。\n（想找回个别文件可在清空前打开项目文件夹的 .trash 目录）`,
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      await api.emptyProjectTrash({ key })
+      const r = await api.getProjectTrashInfo({ key })
+      // 清空/复查这段 await 期间项目可能已切换：只在仍是发起清空时的那个项目才落计数/提示，
+      // 不然会把 B 项目的按钮覆盖成「已清空」，或者把 A 的错误 setInfo 到 B 头上。
+      if (useWorkbench.getState().currentKey === key) {
+        setInfo({ count: r.count, bytes: r.bytes })
+        useWorkbench.setState({ notice: '回收站已清空。' })
+      }
+    } catch (e) {
+      if (useWorkbench.getState().currentKey === key) {
+        useWorkbench.setState({ error: (e as Error).message })
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (info === null) return null
+  if (info.count === 0) {
+    // 空回收站不给点：没东西可清，弹确认反而烦人。
+    return (
+      <button className="text-[11px] text-neutral-600 cursor-default" title="回收站是空的">
+        回收站
+      </button>
+    )
+  }
+  return (
+    <button
+      onClick={empty}
+      disabled={busy}
+      className="text-[11px] text-neutral-400 hover:text-red-300 disabled:opacity-50"
+    >
+      {busy ? '清空中…' : `回收站 (${info.count})`}
+    </button>
   )
 }
 
@@ -869,7 +759,10 @@ export default function Workbench() {
                   <p className="text-xs text-neutral-500">还没有分镜，点「+ 添加分镜」建一个，再「编辑」补提示词。</p>
                 ) : (
                   current.shots.map((s) => (
-                    <ShotCard key={s.shotId} shot={s} count={count} characters={current.characters} />
+                    // key 掺项目标识：角色/镜号跨项目可能同名同号，切项目后 React 若只按
+                    // s.shotId 复用组件实例，卡片内部 useState（editing/zoom 等）会带旧项目
+                    // 的残留状态串到新项目。
+                    <ShotCard key={`${currentKey}:${s.shotId}`} shot={s} count={count} characters={current.characters} />
                   ))
                 )}
               </>
@@ -877,16 +770,24 @@ export default function Workbench() {
               <>
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-neutral-300">人设库 · 一致性锚</h2>
-                  <button onClick={addCharacter} className="text-[11px] text-accent hover:text-accent-soft">
-                    + 添加角色
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <TrashButton />
+                    <button onClick={addCharacter} className="text-[11px] text-accent hover:text-accent-soft">
+                      + 添加角色
+                    </button>
+                  </div>
                 </div>
                 {current.characters.length === 0 ? (
                   <p className="text-xs text-neutral-500">还没有角色，点「+ 添加角色」建一个。</p>
                 ) : (
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                     {current.characters.map((c) => (
-                      <CharacterCard key={c.id} char={c} wide />
+                      // key 掺项目标识：角色 id 就是角色名且跨项目稳定（Scriptwriter 包、手动
+                      // 创建都如此），只用 c.id 会让切项目后同名角色复用同一个 CharacterCard
+                      // 实例，内部 selecting/selected/editing 等 useState 全部带旧项目残留过来
+                      // （多选删除会把旧项目的 ref id 发给新项目，误报删除成功；编辑面板残留
+                      // 会把旧项目角色的名字/锚点存进新项目同名角色）。
+                      <CharacterCard key={`${currentKey}:${c.id}`} char={c} wide />
                     ))}
                   </div>
                 )}
