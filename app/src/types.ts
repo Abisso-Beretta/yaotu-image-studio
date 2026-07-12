@@ -32,6 +32,21 @@ export interface ReferenceImageInput {
   source?: string
 }
 
+// 漫剧上下文：形状对应服务端 normalizeManjuContext 的返回值（server.js）。
+export interface ManjuContext {
+  type: string
+  title: string
+  category: string
+  characterId?: string
+  characterName?: string
+  characterRole?: string
+  shotNo?: string
+  scene?: string
+  sceneTitle?: string
+  queueId?: string
+  characters: string[]
+}
+
 export interface GenerateParams {
   prompt: string
   negativePrompt?: string
@@ -43,6 +58,7 @@ export interface GenerateParams {
   background: string
   outputCompression?: number
   referenceImages?: ReferenceImageInput[]
+  manjuContext?: ManjuContext
 }
 
 export interface ImageRequest {
@@ -56,6 +72,8 @@ export interface ImageRequest {
   output_format?: string
   output_compression?: number
   background?: string
+  referenceImages?: ReferenceImageInput[]
+  manjuContext?: ManjuContext
 }
 
 export interface GeneratedImage {

@@ -234,7 +234,15 @@ export const api = {
   emptyProjectTrash: (body: { key: string }) =>
     postJson<{ key: string; ok: boolean }>('/api/project/trash/empty', body),
 
-  optimizePrompt: (body: { prompt: string; negativePrompt?: string; mode: string }) =>
+  optimizePrompt: (body: {
+    prompt: string
+    negativePrompt?: string
+    mode: string
+    targetSize?: string
+    purpose?: string
+    styleSelected?: boolean
+    styleName?: string
+  }) =>
     postJson<OptimizeResult>('/api/optimize-prompt', body),
 
   // 提示词库 / 最近 / 风格库 / 样图分析
@@ -259,7 +267,11 @@ export const api = {
 
   deleteSavedStyle: (id: string) => postJson<AppSettings>('/api/saved-styles/delete', { id }),
 
-  analyzeImage: (body: { images: { name?: string; dataUrl?: string; url?: string }[]; mode: string }) =>
+  analyzeImage: (body: {
+    images: { name?: string; dataUrl?: string; url?: string }[]
+    mode: string
+    targetSize?: string
+  }) =>
     postJson<AnalyzeResult>('/api/analyze-image', body),
 
   // 辅助 API（优化/分析用的对话模型）

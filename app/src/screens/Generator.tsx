@@ -39,7 +39,7 @@ function ImageCard({ img, onOpen }: { img: GeneratedImage; onOpen: () => void })
       <figcaption className="absolute inset-x-0 bottom-0 flex flex-wrap gap-1 p-1.5 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition">
         <button
           className="text-[11px] px-2 py-1 rounded bg-accent hover:bg-accent-soft text-white"
-          onClick={() => reroll(img)}
+          onClick={() => void reroll(img)}
         >
           重 Roll
         </button>
@@ -108,7 +108,7 @@ export default function Generator() {
   const [optimizeMode, setOptimizeMode] = useState('conservative')
   const [lexCat, setLexCat] = useState(promptLexiconGroups[0]?.id || '')
   const [showPreview, setShowPreview] = useState(false)
-  const [styleStrength, setStyleStrength] = useState('high')
+  const [styleStrength, setStyleStrength] = useState('medium')
   const [lightbox, setLightbox] = useState<{ images: GeneratedImage[]; index: number } | null>(null)
 
   const canGenerate = !generating && form.prompt.trim().length > 0
@@ -127,7 +127,7 @@ export default function Generator() {
             rows={6}
             value={form.prompt}
             onChange={(e) => setForm({ prompt: e.target.value })}
-            placeholder="例如：冷雨夜霓虹巷弄，撑伞青年的背影，电影感赛博朋克写实风，浅景深，胶片颗粒。"
+            placeholder="例如：冷雨夜的霓虹巷弄，一名撑伞行人的背影走向尽头亮着暖灯的门廊，路面积水映出蓝紫色招牌。"
             className="w-full resize-y"
           />
         </label>
@@ -151,8 +151,8 @@ export default function Generator() {
               onChange={(e) => setOptimizeMode(e.target.value)}
               className="flex-1"
             >
-              <option value="conservative">保守优化</option>
-              <option value="quality">质量优先</option>
+              <option value="conservative">保守优化（保留原意）</option>
+              <option value="quality">完整扩写（适合主观描述）</option>
               <option value="continuity">连续性优先</option>
             </select>
             <button
@@ -163,6 +163,9 @@ export default function Generator() {
               {optimizing ? '优化中…' : '优化'}
             </button>
           </div>
+          <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">
+            只优化画面内容，不会另加画风；只有情绪或意象时可用“完整扩写”生成一幅具体画面。
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -216,8 +219,8 @@ export default function Generator() {
 
         {form.style.startsWith('saved:') &&
           savedStyles.find((s) => `saved:${s.id}` === form.style)?.strength === 'high' && (
-            <p className="text-[11px] text-emerald-400/80 -mt-2">
-              ★ 高强度风格：调用时会把该风格的样图作为参考图一起发送。
+            <p className="text-[11px] text-amber-300/80 -mt-2">
+              ★ 高强度会附带原始样图；若样图重复同一角色、服装或构图，模型仍可能继承这些内容。
             </p>
           )}
 
@@ -424,7 +427,7 @@ export default function Generator() {
                   >
                     <option value="low">低强度</option>
                     <option value="medium">中强度</option>
-                    <option value="high">高强度（带样图）</option>
+                    <option value="high">高强度（带样图，可能继承角色）</option>
                   </select>
                   <button
                     onClick={async () => {
@@ -439,6 +442,11 @@ export default function Generator() {
                     存为风格
                   </button>
                 </div>
+                {styleStrength === 'high' && (
+                  <p className="text-[11px] text-amber-300/80">
+                    高强度会把样图随风格发送。建议样本包含不同角色、服装和构图；多张同角色图会强化身份特征，而不只是画法。
+                  </p>
+                )}
               </div>
             )}
           </div>

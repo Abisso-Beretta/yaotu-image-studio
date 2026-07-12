@@ -28,11 +28,15 @@ jobs:
       - name: Check syntax
         run: npm run check
 
-      - name: Test
-        run: npm test
-
       - name: Build web UI (/studio)
         run: npm run build:ui
+
+      # Test 必须放在 build:ui 之后：test/rerollParams.test.mjs 顶部
+      # import 了 app/node_modules/typescript/lib/typescript.js，而根目录
+      # npm ci 不装 app/ 依赖，只有 build:ui（cd app && npm install）跑完
+      # 之后这个文件才存在，否则 Test 会直接因文件缺失报错。
+      - name: Test
+        run: npm test
 
       - name: Ensure GitHub release exists (prevents electron-builder duplicate-release race)
         shell: bash

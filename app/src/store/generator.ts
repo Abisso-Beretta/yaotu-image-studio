@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api, fileToDataUrl, isAbortError } from '@/lib/api'
+import { buildRerollParams } from '@/lib/reroll'
 import { builtInStylePresets, purposePresets } from '@/data/presets'
 import type {
   AppConfig,
@@ -81,7 +82,7 @@ function resolveStyleGuidance(styleKey: string, savedStyles: SavedItem[]): strin
   return builtInStylePresets[styleKey]?.guidance || []
 }
 
-// 高强度的已存风格，把它的参考图也作为参考图发送（保持风格的硬约束）。
+// 高强度的已存风格会附带原始样图；这能强化视觉相似度，也会增加继承主体内容的风险。
 function savedStyleReferences(styleKey: string, savedStyles: SavedItem[]): ReferenceImageInput[] {
   if (!styleKey.startsWith('saved:')) return []
   const id = styleKey.slice('saved:'.length)
@@ -172,7 +173,7 @@ interface GeneratorState {
   generate: () => Promise<void>
   cancelGenerate: () => void
   optimize: (mode: string) => Promise<void>
-  reroll: (img: GeneratedImage) => void
+  reroll: (img: GeneratedImage) => Promise<void>
   loadGallery: (page?: number) => Promise<void>
   deleteImage: (id: string) => Promise<void>
 
@@ -389,7 +390,12 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
   },
 
   optimize: async (mode) => {
-    const { form } = get()
+    const { form, savedStyles } = get()
+    const savedStyle = form.style.startsWith('saved:')
+      ? savedStyles.find((item) => `saved:${item.id}` === form.style)
+      : undefined
+    const styleSelected = Boolean(form.style && form.style !== 'none')
+    const styleName = savedStyle?.name || builtInStylePresets[form.style]?.label || ''
     if (!form.prompt.trim()) {
       set({ error: '先写点提示词再优化。' })
       return
@@ -400,6 +406,10 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
         prompt: form.prompt.trim(),
         negativePrompt: form.negativePrompt.trim() || undefined,
         mode,
+        targetSize: form.size,
+        purpose: purposePresets[form.purpose]?.label || form.purpose,
+        styleSelected,
+        styleName: styleSelected ? styleName || undefined : undefined,
       })
       const optimized = (r.optimizedPrompt || r.text || '').trim()
       if (!optimized) {
@@ -421,25 +431,45 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
     }
   },
 
-  reroll: (img) => {
-    const r = img.request || {}
-    set((s) => ({
-      form: {
-        ...s.form,
-        prompt: r.prompt ?? img.prompt ?? s.form.prompt,
-        // 老图没记录负面词时，保留用户当前输入而不是清空。
-        negativePrompt: r.negativePrompt ?? s.form.negativePrompt,
-        model: r.model ?? s.form.model,
-        size: r.size ?? s.form.size,
-        quality: r.quality ?? s.form.quality,
-        count: r.n ?? s.form.count,
-        outputFormat: r.output_format ?? s.form.outputFormat,
-        background: r.background ?? s.form.background,
-        outputCompression: r.output_compression ?? s.form.outputCompression,
-      },
-      notice: '已载入该图参数，可直接「生成图片」重 Roll。',
-    }))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  reroll: async (img) => {
+    const body = buildRerollParams(img)
+    if (!body) {
+      set({ error: '这张图没有完整提示词记录，不能重 Roll。' })
+      return
+    }
+    if (get().generating) {
+      set({ notice: '当前已有生成任务，请等待完成或先取消。' })
+      return
+    }
+
+    const controller = new AbortController()
+    generateController = controller
+    set({ generating: true, error: null, notice: '正在按原提示词、参数和参考图重 Roll。' })
+    try {
+      const result = await api.generate(body, controller.signal)
+      // 服务端 prepareReferenceImages 对读不到的参考图（原批次目录已被图库清理）是静默 continue 跳过，
+      // 不会报错。这里对比发送量和实际挂上量，落差就说明本次结果可能与原图有出入。
+      const sentReferenceCount = body.referenceImages?.length ?? 0
+      const attachedReferenceCount = result.images[0]?.request?.referenceImages?.length ?? 0
+      const notice =
+        sentReferenceCount > 0 && attachedReferenceCount < sentReferenceCount
+          ? `已重 Roll ${result.images.length} 张，但原图的 ${sentReferenceCount} 张参考图中只有 ${attachedReferenceCount} 张仍然存在并被使用（原批次参考文件可能已被图库清理），本次结果可能与原图有出入。`
+          : `已重 Roll ${result.images.length} 张，批次 ${result.batchId}。`
+      set({
+        lastBatch: result.images,
+        notice,
+      })
+      await get().loadGallery(1)
+    } catch (e) {
+      if (isAbortError(e)) {
+        set({ notice: '已取消：中断等待（服务端可能仍在完成本次生成并计费，完成的图刷新图库可见）。' })
+      } else {
+        set({ error: (e as Error).message })
+      }
+    } finally {
+      if (generateController === controller) generateController = null
+      set({ generating: false })
+    }
   },
 
   loadGallery: async (page = 1) => {
@@ -548,7 +578,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
   setAnalysisMode: (mode) => set({ analysisMode: mode }),
 
   runAnalysis: async () => {
-    const { analysisImages, analysisMode } = get()
+    const { analysisImages, analysisMode, form } = get()
     if (analysisImages.length === 0) {
       set({ error: '先上传要分析的样图。' })
       return
@@ -558,6 +588,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       const r = await api.analyzeImage({
         images: analysisImages.map((a) => ({ name: a.name, dataUrl: a.dataUrl, url: a.url })),
         mode: analysisMode,
+        targetSize: form.size,
       })
       set({ analysisResult: r.text, notice: `已分析 ${analysisImages.length} 张样图。` })
     } catch (e) {
@@ -601,7 +632,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
         ...pickCollections(settings),
         notice:
           strength === 'high'
-            ? '风格已保存（高强度，调用时样图会作为参考图发送）。'
+            ? '风格已保存（高强度会附带样图；同角色样图可能导致外貌、服装或构图被继承）。'
             : '风格已保存，可在「风格」下拉里选用。',
       })
     } catch (e) {
