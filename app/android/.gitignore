@@ -57,6 +57,10 @@ captures/
 #*.jks
 #*.keystore
 
+# 妖荼正式签名密钥：keystore 文件、明文密码(keystore.properties)、GitHub Secret 用的 base64——
+# 三件套绝不入库。丢失将无法覆盖安装升级，务必离线备份该目录。
+keystore/
+
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/

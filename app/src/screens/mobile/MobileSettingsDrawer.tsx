@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { App } from '@capacitor/app'
 import { useGenerator } from '@/store/generator'
 import { useTheme, type BackgroundTheme } from '@/store/theme'
+import { checkForUpdate, type UpdateCheckResult } from '@/mobile/updateCheck'
 import type { AuxiliaryInput, AuxiliaryProfile, ProfileInput, SettingsProfile } from '@/types'
 
 // 生图接口模式，与桌面 SettingsModal 保持一致。
@@ -333,9 +335,108 @@ function AuxiliarySection() {
   )
 }
 
+// 关于区：显示当前版本（App.getInfo 的 versionName）+ 手动「检查更新」。
+// 不做启动自动检查——用户网络连 GitHub 不稳，纯手动触发，避免开设置就卡一下。
+function AboutSection() {
+  const [version, setVersion] = useState<string>('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<UpdateCheckResult | null>(null)
+
+  // 首帧异步取真实 versionName（App.getInfo 是 Promise）；取不到就留空，显示「—」。
+  useEffect(() => {
+    let alive = true
+    App.getInfo()
+      .then((info) => {
+        if (alive) setVersion(String(info?.version || '').trim())
+      })
+      .catch(() => {
+        // 桌面/浏览器预览里没有原生 App 插件，getInfo 会 reject——保持空串即可。
+      })
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const runCheck = async () => {
+    setBusy(true)
+    setResult(null)
+    try {
+      const r = await checkForUpdate()
+      setResult(r)
+      // 检查结果里带回的 current（versionName）比首帧更权威，回填一下。
+      if (r.current) setVersion(r.current)
+    } catch {
+      // checkForUpdate 内部已兜住所有异常并回 status:'error'，这里是双保险。
+      setResult({ status: 'error', current: version, message: '检查更新失败，稍后再试' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="border-t border-line pt-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-neutral-200">关于</h3>
+        <span className="text-xs text-neutral-500">妖荼手机版 v{version || '—'}</span>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          disabled={busy}
+          onClick={runCheck}
+          className="min-h-[44px] px-4 rounded-lg border border-line text-sm text-neutral-200 active:border-accent-soft disabled:opacity-40"
+        >
+          {busy ? '检查中…' : '检查更新'}
+        </button>
+        {/* 已是最新：行内绿字 */}
+        {result?.status === 'latest' && (
+          <span className="text-xs text-emerald-400">已是最新 v{result.latest || version || '—'}</span>
+        )}
+        {/* 出错：行内红字友好文案 */}
+        {result?.status === 'error' && (
+          <span className="text-xs text-red-400">{result.message || '检查更新失败，稍后再试'}</span>
+        )}
+      </div>
+
+      {/* 有更新：新版本号 + 更新说明（可滚动小区域）+ 去下载 */}
+      {result?.status === 'update' && (
+        <div className="rounded-lg border border-accent-soft/60 bg-accent/5 p-3 space-y-2">
+          <div className="text-sm text-neutral-100">
+            发现新版本 <span className="font-bold text-accent-soft">v{result.latest}</span>
+            <span className="text-neutral-500"> · 当前 v{result.current || version || '—'}</span>
+          </div>
+          {result.notes && (
+            <div className="max-h-32 overflow-y-auto rounded bg-black/20 p-2 text-[11px] leading-relaxed text-neutral-300 whitespace-pre-wrap">
+              {result.notes}
+            </div>
+          )}
+          <button
+            onClick={() => {
+              // Capacitor 6 Android：WebView 未开 setSupportMultipleWindows，window.open 到外部 http(s)
+              // 会走 shouldOverrideUrlLoading → Bridge.launchIntent → 系统 ACTION_VIEW（外部浏览器/下载器）。
+              // 见报告：无需 @capacitor/browser 插件。
+              if (result.apkUrl) window.open(result.apkUrl, '_blank')
+            }}
+            className="min-h-[44px] w-full rounded-lg bg-accent active:bg-accent-soft text-white text-sm"
+          >
+            去下载
+          </button>
+          {result.htmlUrl && (
+            <button
+              onClick={() => window.open(result.htmlUrl, '_blank')}
+              className="text-[11px] text-neutral-500 underline"
+            >
+              打开 Release 页面
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 export default function MobileSettingsDrawer() {
   const {
-    config,
     settings,
     settingsBusy,
     testResult,
@@ -602,12 +703,7 @@ export default function MobileSettingsDrawer() {
           </section>
 
           {/* —— 关于 —— */}
-          <section className="border-t border-line pt-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-neutral-200">关于</h3>
-              <span className="text-xs text-neutral-500">妖荼手机版 v{config?.version || '—'}</span>
-            </div>
-          </section>
+          <AboutSection />
         </div>
       </div>
     </div>

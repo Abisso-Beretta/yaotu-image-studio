@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "build:mobile": "tsc && vite build --mode mobile",
     "cap:sync": "npm run build:mobile && cap sync android",
-    "android:apk": "cd android && gradlew assembleDebug"
+    "android:apk": "cd android && gradlew assembleDebug",
+    "android:apk:release": "cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@capacitor-community/media": "^7.0.0",

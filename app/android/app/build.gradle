@@ -1,5 +1,36 @@
 apply plugin: 'com.android.application'
 
+// 妖荼正式签名配置的解析：优先读本地 keystore/keystore.properties（开发机出包），
+// 找不到就读环境变量（CI 用），两者都没有则 release 退回不签名（构建不炸，只是产物无法安装升级）。
+def releaseSigning = [ready: false, storeFile: null, storePassword: null, keyAlias: null, keyPassword: null]
+def keystorePropsFile = rootProject.file('keystore/keystore.properties')
+if (keystorePropsFile.exists()) {
+    def props = new Properties()
+    keystorePropsFile.withInputStream { props.load(it) }
+    def storeFileName = props.getProperty('storeFile')
+    def resolvedStore = rootProject.file("keystore/${storeFileName}")
+    if (storeFileName && resolvedStore.exists()) {
+        releaseSigning = [
+            ready: true,
+            storeFile: resolvedStore,
+            storePassword: props.getProperty('storePassword'),
+            keyAlias: props.getProperty('keyAlias'),
+            keyPassword: props.getProperty('keyPassword'),
+        ]
+    }
+} else if (System.getenv('YAOTU_KEYSTORE_PATH')) {
+    def envStore = file(System.getenv('YAOTU_KEYSTORE_PATH'))
+    if (envStore.exists()) {
+        releaseSigning = [
+            ready: true,
+            storeFile: envStore,
+            storePassword: System.getenv('YAOTU_KEYSTORE_PASSWORD'),
+            keyAlias: System.getenv('YAOTU_KEY_ALIAS'),
+            keyPassword: System.getenv('YAOTU_KEY_PASSWORD'),
+        ]
+    }
+}
+
 android {
     namespace "local.yaotu.mobile"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +38,8 @@ android {
         applicationId "local.yaotu.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "0.2.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +47,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigning.ready) {
+            release {
+                storeFile releaseSigning.storeFile
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            // WebView 壳无需混淆，避免引入运行期风险。
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigning.ready) {
+                signingConfig signingConfigs.release
+            } else {
+                logger.warn('YaoTu: 未找到 keystore.properties 或签名环境变量，release 构建将不签名（产物无法安装升级）。')
+            }
         }
     }
 }
