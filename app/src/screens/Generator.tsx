@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useGenerator, composePrompt } from '@/store/generator'
 import { builtInStylePresets, promptLexiconGroups, purposePresets } from '@/data/presets'
+import { capabilities } from '@/platform'
 import Lightbox from '@/components/Lightbox'
 import { openPrompt } from '@/components/PromptDialog'
 import type { GeneratedImage } from '@/types'
@@ -143,30 +144,32 @@ export default function Generator() {
           />
         </label>
 
-        <div>
-          <Label>优化提示词（辅助 API）</Label>
-          <div className="flex gap-2">
-            <select
-              value={optimizeMode}
-              onChange={(e) => setOptimizeMode(e.target.value)}
-              className="flex-1"
-            >
-              <option value="conservative">保守优化（保留原意）</option>
-              <option value="quality">完整扩写（适合主观描述）</option>
-              <option value="continuity">连续性优先</option>
-            </select>
-            <button
-              disabled={optimizing || !form.prompt.trim()}
-              onClick={() => optimize(optimizeMode)}
-              className="px-3 py-2 rounded-lg border border-line text-sm text-neutral-200 hover:border-accent-soft disabled:opacity-40"
-            >
-              {optimizing ? '优化中…' : '优化'}
-            </button>
+        {capabilities.auxApi && (
+          <div>
+            <Label>优化提示词（辅助 API）</Label>
+            <div className="flex gap-2">
+              <select
+                value={optimizeMode}
+                onChange={(e) => setOptimizeMode(e.target.value)}
+                className="flex-1"
+              >
+                <option value="conservative">保守优化（保留原意）</option>
+                <option value="quality">完整扩写（适合主观描述）</option>
+                <option value="continuity">连续性优先</option>
+              </select>
+              <button
+                disabled={optimizing || !form.prompt.trim()}
+                onClick={() => optimize(optimizeMode)}
+                className="px-3 py-2 rounded-lg border border-line text-sm text-neutral-200 hover:border-accent-soft disabled:opacity-40"
+              >
+                {optimizing ? '优化中…' : '优化'}
+              </button>
+            </div>
+            <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">
+              只优化画面内容，不会另加画风；只有情绪或意象时可用“完整扩写”生成一幅具体画面。
+            </p>
           </div>
-          <p className="mt-1.5 text-[11px] leading-5 text-neutral-500">
-            只优化画面内容，不会另加画风；只有情绪或意象时可用“完整扩写”生成一幅具体画面。
-          </p>
-        </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
@@ -337,120 +340,122 @@ export default function Generator() {
         </details>
 
         {/* 样图分析 */}
-        <details className="border-t border-line pt-3">
-          <summary className="cursor-pointer select-none text-xs text-neutral-400">
-            样图分析（辅助 API）
-          </summary>
-          <div className="mt-2 space-y-2">
-            <input
-              ref={analysisInput}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files) addAnalysisFiles(e.target.files)
-                e.target.value = ''
-              }}
-            />
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => analysisInput.current?.click()}
-                className="flex-1 text-xs py-1.5 rounded border border-dashed border-line text-neutral-400 hover:border-accent-soft"
-              >
-                + 添加样图（最多 8 张）
-              </button>
-              {analysisImages.length > 0 && (
+        {capabilities.auxApi && (
+          <details className="border-t border-line pt-3">
+            <summary className="cursor-pointer select-none text-xs text-neutral-400">
+              样图分析（辅助 API）
+            </summary>
+            <div className="mt-2 space-y-2">
+              <input
+                ref={analysisInput}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                onChange={(e) => {
+                  if (e.target.files) addAnalysisFiles(e.target.files)
+                  e.target.value = ''
+                }}
+              />
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={clearAnalysis}
-                  className="text-[11px] text-neutral-500 hover:text-neutral-300"
+                  onClick={() => analysisInput.current?.click()}
+                  className="flex-1 text-xs py-1.5 rounded border border-dashed border-line text-neutral-400 hover:border-accent-soft"
                 >
-                  清空
+                  + 添加样图（最多 8 张）
                 </button>
-              )}
-            </div>
-            {analysisImages.length > 0 && (
-              <div className="grid grid-cols-4 gap-2">
-                {analysisImages.map((r) => (
-                  <div key={r.id} className="relative">
-                    <img
-                      src={r.dataUrl || r.url}
-                      alt={r.name}
-                      className="w-full aspect-square object-cover rounded border border-line"
-                    />
-                    <button
-                      className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 text-neutral-300 text-xs leading-5"
-                      onClick={() => removeAnalysisImage(r.id)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <select
-                value={analysisMode}
-                onChange={(e) => setAnalysisMode(e.target.value)}
-                className="flex-1 text-xs"
-              >
-                <option value="prompt">提示词</option>
-                <option value="keywords">关键词</option>
-                <option value="style">风格 DNA</option>
-                <option value="scene">场景</option>
-              </select>
-              <button
-                onClick={runAnalysis}
-                disabled={analysisBusy || analysisImages.length === 0}
-                className="px-3 py-1.5 rounded border border-line text-xs text-neutral-200 hover:border-accent-soft disabled:opacity-40"
-              >
-                {analysisBusy ? '分析中…' : '分析'}
-              </button>
-            </div>
-            {analysisResult && (
-              <div className="space-y-2">
-                <pre className="whitespace-pre-wrap text-[11px] text-neutral-400 bg-panel border border-line rounded p-2 max-h-48 overflow-y-auto">
-                  {analysisResult}
-                </pre>
-                <div className="flex flex-wrap items-center gap-2">
+                {analysisImages.length > 0 && (
                   <button
-                    onClick={useAnalysisAsPrompt}
-                    className="text-[11px] px-2 py-1 rounded bg-accent hover:bg-accent-soft text-white"
+                    onClick={clearAnalysis}
+                    className="text-[11px] text-neutral-500 hover:text-neutral-300"
                   >
-                    用作提示词
+                    清空
                   </button>
-                  <select
-                    value={styleStrength}
-                    onChange={(e) => setStyleStrength(e.target.value)}
-                    className="text-[11px] py-1"
-                    title="风格强度"
-                  >
-                    <option value="low">低强度</option>
-                    <option value="medium">中强度</option>
-                    <option value="high">高强度（带样图，可能继承角色）</option>
-                  </select>
-                  <button
-                    onClick={async () => {
-                      const name = await openPrompt({
-                        title: '存为风格',
-                        label: '给这个风格起个名字',
-                      })
-                      if (name !== null) saveAnalysisAsStyle(name, styleStrength)
-                    }}
-                    className="text-[11px] px-2 py-1 rounded border border-line text-neutral-200 hover:border-accent-soft"
-                  >
-                    存为风格
-                  </button>
-                </div>
-                {styleStrength === 'high' && (
-                  <p className="text-[11px] text-amber-300/80">
-                    高强度会把样图随风格发送。建议样本包含不同角色、服装和构图；多张同角色图会强化身份特征，而不只是画法。
-                  </p>
                 )}
               </div>
-            )}
-          </div>
-        </details>
+              {analysisImages.length > 0 && (
+                <div className="grid grid-cols-4 gap-2">
+                  {analysisImages.map((r) => (
+                    <div key={r.id} className="relative">
+                      <img
+                        src={r.dataUrl || r.url}
+                        alt={r.name}
+                        className="w-full aspect-square object-cover rounded border border-line"
+                      />
+                      <button
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 text-neutral-300 text-xs leading-5"
+                        onClick={() => removeAnalysisImage(r.id)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <select
+                  value={analysisMode}
+                  onChange={(e) => setAnalysisMode(e.target.value)}
+                  className="flex-1 text-xs"
+                >
+                  <option value="prompt">提示词</option>
+                  <option value="keywords">关键词</option>
+                  <option value="style">风格 DNA</option>
+                  <option value="scene">场景</option>
+                </select>
+                <button
+                  onClick={runAnalysis}
+                  disabled={analysisBusy || analysisImages.length === 0}
+                  className="px-3 py-1.5 rounded border border-line text-xs text-neutral-200 hover:border-accent-soft disabled:opacity-40"
+                >
+                  {analysisBusy ? '分析中…' : '分析'}
+                </button>
+              </div>
+              {analysisResult && (
+                <div className="space-y-2">
+                  <pre className="whitespace-pre-wrap text-[11px] text-neutral-400 bg-panel border border-line rounded p-2 max-h-48 overflow-y-auto">
+                    {analysisResult}
+                  </pre>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={useAnalysisAsPrompt}
+                      className="text-[11px] px-2 py-1 rounded bg-accent hover:bg-accent-soft text-white"
+                    >
+                      用作提示词
+                    </button>
+                    <select
+                      value={styleStrength}
+                      onChange={(e) => setStyleStrength(e.target.value)}
+                      className="text-[11px] py-1"
+                      title="风格强度"
+                    >
+                      <option value="low">低强度</option>
+                      <option value="medium">中强度</option>
+                      <option value="high">高强度（带样图，可能继承角色）</option>
+                    </select>
+                    <button
+                      onClick={async () => {
+                        const name = await openPrompt({
+                          title: '存为风格',
+                          label: '给这个风格起个名字',
+                        })
+                        if (name !== null) saveAnalysisAsStyle(name, styleStrength)
+                      }}
+                      className="text-[11px] px-2 py-1 rounded border border-line text-neutral-200 hover:border-accent-soft"
+                    >
+                      存为风格
+                    </button>
+                  </div>
+                  {styleStrength === 'high' && (
+                    <p className="text-[11px] text-amber-300/80">
+                      高强度会把样图随风格发送。建议样本包含不同角色、服装和构图；多张同角色图会强化身份特征，而不只是画法。
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </details>
+        )}
 
         <label className="block">
           <Label>模型</Label>

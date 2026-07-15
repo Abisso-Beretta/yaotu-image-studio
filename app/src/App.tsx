@@ -5,6 +5,7 @@ import Generator from '@/screens/Generator'
 import Workbench from '@/screens/Workbench'
 import SettingsModal from '@/components/SettingsModal'
 import PromptDialogHost from '@/components/PromptDialog'
+import { capabilities } from '@/platform'
 
 const THEME_SWATCHES: Array<{ key: BackgroundTheme; label: string; swatch: string }> = [
   { key: 'white', label: '白', swatch: '#eef1f5' },
@@ -114,7 +115,7 @@ export default function App() {
             )}
             <div className="flex items-center gap-1.5">
               {tab('generate', '纯生图')}
-              {tab('workbench', '漫剧工作台')}
+              {capabilities.workbench && tab('workbench', '漫剧工作台')}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -129,7 +130,7 @@ export default function App() {
           </div>
         </header>
         <main className="flex-1 min-h-0 rounded-2xl border border-line bg-ink/45 backdrop-blur-md shadow-2xl overflow-hidden flex flex-col">
-          {view === 'generate' ? <Generator /> : <Workbench />}
+          {view === 'workbench' && capabilities.workbench ? <Workbench /> : <Generator />}
         </main>
       </div>
       <SettingsModal />

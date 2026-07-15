@@ -80,7 +80,8 @@ test("只有主观描述时，完整扩写与保守优化都要求落成单一�
 });
 
 test("前端把尺寸、用途和风格元数据传给优化器，但不发送完整风格 DNA", () => {
-  const apiSource = fs.readFileSync(path.resolve("app/src/lib/api.ts"), "utf8");
+  // api.ts 已拆成「平台选择器 + serverApi.ts（原 api 对象实现）」，optimizePrompt 的签名现落在 serverApi.ts。
+  const apiSource = fs.readFileSync(path.resolve("app/src/lib/serverApi.ts"), "utf8");
   const storeSource = fs.readFileSync(path.resolve("app/src/store/generator.ts"), "utf8");
   const screenSource = fs.readFileSync(path.resolve("app/src/screens/Generator.tsx"), "utf8");
   const optimizeBlock = storeSource.slice(

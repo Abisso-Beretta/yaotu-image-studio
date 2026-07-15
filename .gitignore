@@ -22,4 +22,7 @@ latest.yml
 *.tsbuildinfo
 app/vite.config.js
 app/vite.config.d.ts
+# 妖荼手机版：Capacitor 离线构建产物 + 生成的原生工程（均可由 npm run build:mobile / npx cap add android 重建）
+app/dist-mobile/
+app/android/
 /image/
