@@ -9,10 +9,10 @@ export const isNative = Capacitor.isNativePlatform()
 // 避免用户点进去撞到「暂未支持」的兜底错误。桌面/浏览器全部开启，保持原样。
 export interface PlatformCapabilities {
   workbench: boolean       // 漫剧工作台（依赖 server.js 的项目持久化，手机版不做）
-  auxApi: boolean          // 优化提示词 / 样图分析 / 辅助模型（依赖辅助对话模型）
+  auxApi: boolean          // 优化提示词 / 样图分析 / 辅助模型（M3 起手机版经共享构建器 + HttpAdapter 支持）
   desktopFeatures: boolean // 桌面特有功能（更新检测等）
 }
 
 export const capabilities: PlatformCapabilities = isNative
-  ? { workbench: false, auxApi: false, desktopFeatures: false }
+  ? { workbench: false, auxApi: true, desktopFeatures: false }
   : { workbench: true, auxApi: true, desktopFeatures: true }

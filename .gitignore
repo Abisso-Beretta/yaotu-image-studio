@@ -22,7 +22,9 @@ latest.yml
 *.tsbuildinfo
 app/vite.config.js
 app/vite.config.d.ts
-# 妖荼手机版：Capacitor 离线构建产物 + 生成的原生工程（均可由 npm run build:mobile / npx cap add android 重建）
+# 妖荼手机版：Capacitor 离线构建产物（可由 npm run build:mobile 重建）
 app/dist-mobile/
-app/android/
+# 注意：app/android/ 曾整体忽略，现已入库——因为开始手改原生工程文件（AndroidManifest 权限/声明），
+# 必须纳入版本管理。构建产物由 android/ 自带的 .gitignore 兜住（build/、.gradle/、local.properties、
+# app/src/main/assets/public 等拷贝的 web 资产与生成的 config），不会误入库。
 /image/

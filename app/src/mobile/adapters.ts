@@ -50,3 +50,8 @@ export interface SecretAdapter {
   set(key: string, value: string): Promise<void>
   remove(key: string): Promise<void>
 }
+
+// 提示词构建器（桌面/手机共用的纯逻辑）注入面。类型来自 shared/promptBuilders.d.ts，
+// 经此 type-only 再导出，engine.ts 就只需从 './adapters' 引这一处类型（保持零运行时 import）。
+// 真机由 mobileApi.ts 注入 shared/promptBuilders.cjs 的真货，测试直接 require 同一个 .cjs。
+export type { PromptBuilders } from '@shared/promptBuilders'

@@ -8,8 +8,10 @@
 //
 // 行为对齐 server.js（见任务说明 C 节）。存储路径一律是 Directory.Data 下的相对路径。
 import type {
+  AnalyzeResult,
   AppConfig,
   AppSettings,
+  AuxiliaryInput,
   AuxiliaryModelsResult,
   GenerateParams,
   GenerateResult,
@@ -17,6 +19,7 @@ import type {
   ImageRequest,
   ImagesPage,
   ManjuContext,
+  OptimizeResult,
   ProfileInput,
   ReferenceImageInput,
   SavedItem,
@@ -24,14 +27,16 @@ import type {
   SettingsProfile,
   TestResult,
 } from '@/types'
-import type { FileAdapter, HttpAdapter, HttpResponse, SecretAdapter } from './adapters'
+import type { FileAdapter, HttpAdapter, HttpResponse, PromptBuilders, SecretAdapter } from './adapters'
 
-// 注入依赖：核心逻辑对文件系统 / 网络 / 安全存储 / 展示 url 转换都只依赖这四个能力。
+// 注入依赖：核心逻辑对文件系统 / 网络 / 安全存储 / 展示 url 转换都只依赖这四个能力，
+// 外加 promptBuilders（桌面/手机共用的提示词构建纯逻辑，来自 shared/promptBuilders.cjs）。
 export interface EngineDeps {
   http: HttpAdapter
   file: FileAdapter
   secret: SecretAdapter
   toDisplayUrl: (relPath: string) => string // 相对路径 → 前端 <img src> 可显示的 url；测试注入恒等函数
+  promptBuilders: PromptBuilders // 优化提示词 / 样图分析要用的纯构建器；mobileApi 注入真货，测试注入同一份 .cjs
 }
 
 // ===== 常量：本地存储位置 =====
@@ -41,6 +46,11 @@ const CONFIG_PATH = 'config.json'
 const SETTINGS_PATH = 'settings.json'
 const UI_PREFS_PATH = 'ui-prefs.json'
 const SECRET_KEY = 'yaotu.apiKey'
+// 辅助 API（优化/分析用的对话模型）独立密钥。仅当辅助配置「不复用生图配置」时才用它，
+// 复用时辅助 API 直接借用生图的 SECRET_KEY。对齐 server.js 辅助配置的 useActiveProfile 语义。
+const AUX_SECRET_KEY = 'yaotu.auxApiKey'
+// 辅助模型默认值，对齐 server.js normalizeAuxiliaryModel / getAuxiliaryApiConfig。
+const DEFAULT_AUX_MODEL = 'gpt-4o-mini'
 
 const ALLOWED_QUALITIES = ['auto', 'low', 'medium', 'high']
 const ALLOWED_FORMATS = ['png', 'jpeg', 'webp']
@@ -67,6 +77,28 @@ function normalizePrompt(value: unknown): string {
 function normalizeOptionalText(value: unknown, max: number): string {
   const s = String(value ?? '').trim()
   return s.length > max ? s.slice(0, max) : s
+}
+
+// 优化提示词入口的草稿校验：4~32000 字符（对齐 server.js normalizePromptDraft，
+// 比生图入口 normalizePrompt 的最低 8 更宽松——优化允许更短的灵感草稿）。
+function normalizePromptDraft(value: unknown): string {
+  const s = String(value ?? '').trim()
+  if (s.length < 4) throw new Error('提示词太短（至少 4 个字符）。')
+  if (s.length > 32000) throw new Error('提示词太长（超过 32000 字符）。')
+  return s
+}
+
+function stripTrailingSlash(value: unknown): string {
+  return String(value ?? '').trim().replace(/\/+$/, '')
+}
+
+// 辅助模型名校验：默认 gpt-4o-mini；空 / 超 120 字 / 含换行 → 抛错（对齐 server.js normalizeAuxiliaryModel）。
+function normalizeAuxiliaryModel(value: unknown): string {
+  const model = String(value || DEFAULT_AUX_MODEL).trim()
+  if (!model || model.length > 120 || /[\r\n]/.test(model)) {
+    throw new Error('辅助模型名称不合法（需为 1~120 字符且不含换行）。')
+  }
+  return model
 }
 
 function clampInteger(value: unknown, min: number, max: number, fallback: number): number {
@@ -499,11 +531,35 @@ function upsertRecentItem(items: unknown, item: SavedItem): SavedItem[] {
   return [nextItem, ...list].slice(0, 80)
 }
 
-// 本地存储的原始设置形状（只存三个集合；profiles 由 config.json + secret 派生，不落这里）。
+// 本地存储的原始设置形状（存三个收藏集合 + 辅助 API 配置；profiles 由 config.json + secret 派生，不落这里）。
 interface StoredSettings {
   savedPrompts: SavedItem[]
   savedStyles: SavedItem[]
   recentPrompts: SavedItem[]
+  auxiliary: StoredAux
+}
+
+// 辅助 API 配置（优化/分析用的对话模型）。对齐 server.js AppSettings.auxiliary 的字段子集：
+// useActiveProfile=true 时借用生图配置的 baseUrl+key，此时 baseUrl 字段仅作占位。key 不落这里，走 AUX_SECRET_KEY。
+interface StoredAux {
+  name: string
+  useActiveProfile: boolean
+  baseUrl: string
+  model: string
+}
+
+function createDefaultAux(): StoredAux {
+  return { name: '辅助 API', useActiveProfile: true, baseUrl: '', model: '' }
+}
+
+function normalizeStoredAux(value: unknown): StoredAux {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  return {
+    name: String(raw.name || '辅助 API').trim().slice(0, 80) || '辅助 API',
+    useActiveProfile: raw.useActiveProfile !== false, // 缺省视为「复用生图配置」，对齐 server.js
+    baseUrl: stripTrailingSlash(raw.baseUrl),
+    model: String(raw.model || '').trim().slice(0, 120),
+  }
 }
 
 interface StoredConfig {
@@ -881,8 +937,10 @@ export class MobileEngine {
   }
 
   // 解析一张参考图 → {base64, mimeType}。dataUrl 直接解；否则把 url 当本地相对路径读回（重 Roll 场景）。
+  // 参数只取 dataUrl / url 两个字段，故用结构化类型同时容纳生图参考图（ReferenceImageInput，name 必填）
+  // 与样图分析入参（name 可选）两类调用方。
   private async resolveReferenceImage(
-    reference: ReferenceImageInput | undefined,
+    reference: { dataUrl?: string; url?: string } | undefined,
   ): Promise<{ base64: string; mimeType: string } | null> {
     if (!reference || typeof reference !== 'object') return null
 
@@ -1030,6 +1088,7 @@ export class MobileEngine {
       savedPrompts: normalizeSavedItems(parsed.savedPrompts),
       savedStyles: normalizeSavedItems(parsed.savedStyles),
       recentPrompts: normalizeSavedItems(parsed.recentPrompts),
+      auxiliary: normalizeStoredAux(parsed.auxiliary),
     }
   }
 
@@ -1042,6 +1101,9 @@ export class MobileEngine {
     const config = await this.readConfig()
     const hasKey = await this.hasApiKey()
     const stored = await this.readStoredSettings()
+    const aux = stored.auxiliary
+    // 辅助 API 是否已配 key：复用生图配置时看生图 key，否则看 AUX_SECRET_KEY。
+    const auxHasKey = aux.useActiveProfile ? hasKey : Boolean(await this.deps.secret.get(AUX_SECRET_KEY))
     const profile: SettingsProfile = {
       id: 'mobile',
       name: '手机配置',
@@ -1051,30 +1113,22 @@ export class MobileEngine {
       hasApiKey: hasKey,
       apiKeyMask: hasKey ? '已配置' : '',
     }
+    const auxProfile = {
+      id: 'aux-mobile',
+      name: aux.name || '辅助 API',
+      useActiveProfile: aux.useActiveProfile,
+      // 复用生图配置时对外展示生图 baseUrl，独立时展示自己的（回退生图 baseUrl）。
+      baseUrl: aux.useActiveProfile ? config.baseUrl : aux.baseUrl || config.baseUrl,
+      model: aux.model,
+      hasApiKey: auxHasKey,
+      apiKeyMask: auxHasKey ? '已配置' : '',
+    }
     return {
       activeProfileId: 'mobile',
       profiles: [profile],
       activeAuxiliaryProfileId: 'aux-mobile',
-      auxiliaryProfiles: [
-        {
-          id: 'aux-mobile',
-          name: '辅助 API',
-          useActiveProfile: true,
-          baseUrl: config.baseUrl,
-          model: '',
-          hasApiKey: hasKey,
-          apiKeyMask: hasKey ? '已配置' : '',
-        },
-      ],
-      auxiliary: {
-        id: 'aux-mobile',
-        name: '辅助 API',
-        useActiveProfile: true,
-        baseUrl: config.baseUrl,
-        model: '',
-        hasApiKey: hasKey,
-        apiKeyMask: hasKey ? '已配置' : '',
-      },
+      auxiliaryProfiles: [auxProfile],
+      auxiliary: auxProfile,
       savedPrompts: stored.savedPrompts,
       savedStyles: stored.savedStyles,
       recentPrompts: stored.recentPrompts,
@@ -1263,5 +1317,297 @@ export class MobileEngine {
       .map((m: any) => (typeof m?.id === 'string' ? m.id : ''))
       .filter((id: string) => Boolean(id))
       .sort()
+  }
+
+  // ---------- 辅助 API：优化提示词 / 样图分析 / 连接测试 / 模型列表 ----------
+
+  // 解析辅助 API 配置（无 input 变体，对齐 server.js getAuxiliaryApiConfig）。
+  // useActiveProfile=true → 借用生图配置的 baseUrl + SECRET_KEY；否则用辅助自己的 baseUrl + AUX_SECRET_KEY。
+  private async readAuxConfig(): Promise<{ name: string; apiKey: string; baseUrl: string; model: string }> {
+    const config = await this.readConfig()
+    const aux = (await this.readStoredSettings()).auxiliary
+    const genKey = String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    if (aux.useActiveProfile) {
+      return {
+        name: '辅助 API（复用生图配置）',
+        apiKey: genKey,
+        baseUrl: config.baseUrl,
+        model: aux.model || DEFAULT_AUX_MODEL,
+      }
+    }
+    const auxKey = String((await this.deps.secret.get(AUX_SECRET_KEY)) || '').trim()
+    return {
+      name: '辅助 API',
+      apiKey: auxKey,
+      baseUrl: stripTrailingSlash(aux.baseUrl || config.baseUrl),
+      model: aux.model || DEFAULT_AUX_MODEL,
+    }
+  }
+
+  // 解析辅助 API 配置（带 input 覆盖，对齐 server.js getAuxiliaryApiConfigFromInput）。
+  // 用于连接测试 / 模型列表：input 可临时覆盖 useActiveProfile / apiKey / baseUrl / model。
+  private async readAuxConfigFromInput(input: {
+    useActiveProfile?: boolean
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+  }): Promise<{ name: string; apiKey: string; baseUrl: string; model: string }> {
+    const config = await this.readConfig()
+    const existing = (await this.readStoredSettings()).auxiliary
+    const genKey = String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    const useActiveProfile = Object.prototype.hasOwnProperty.call(input, 'useActiveProfile')
+      ? input.useActiveProfile !== false
+      : existing.useActiveProfile
+    const model = normalizeAuxiliaryModel(input.model || existing.model)
+
+    if (useActiveProfile) {
+      return { name: '辅助 API（复用生图配置）', apiKey: genKey, baseUrl: config.baseUrl, model }
+    }
+    const auxKey = String((await this.deps.secret.get(AUX_SECRET_KEY)) || '').trim()
+    return {
+      name: '辅助 API',
+      apiKey: String(input.apiKey || auxKey || '').trim(),
+      baseUrl: stripTrailingSlash(input.baseUrl || existing.baseUrl || config.baseUrl),
+      model,
+    }
+  }
+
+  // 调用辅助对话模型（对齐 server.js requestAuxiliaryChat）。POST {model, messages, temperature:0.2, max_tokens?}
+  // 到 {baseUrl}/v1/chat/completions，Bearer 鉴权。非 2xx 由 checkResponse 抛出可读错误。
+  private async requestAuxiliaryChat(
+    config: { apiKey: string; baseUrl: string; model: string },
+    messages: unknown[],
+    options: { maxTokens?: number } = {},
+  ): Promise<unknown> {
+    const payload: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      temperature: 0.2,
+    }
+    if (options.maxTokens) payload.max_tokens = options.maxTokens
+    const resp = await this.deps.http.postJson(
+      buildOpenAiUrl(config.baseUrl, '/chat/completions'),
+      payload,
+      this.authHeaders(config.apiKey),
+    )
+    return this.checkResponse(resp)
+  }
+
+  // 优化提示词：对齐 server.js optimizePrompt（系统+用户双消息，用户消息由共享构建器拼）。
+  async optimizePrompt(body: {
+    prompt: string
+    negativePrompt?: string
+    mode: string
+    targetSize?: string
+    purpose?: string
+    styleSelected?: boolean
+    styleName?: string
+  }): Promise<OptimizeResult> {
+    const pb = this.deps.promptBuilders
+    const prompt = normalizePromptDraft(body.prompt)
+    const negativePrompt = normalizeOptionalText(body.negativePrompt, 8000)
+    const mode = pb.normalizePromptOptimizeMode(body.mode)
+    const targetSize = pb.normalizeAnalysisTargetSize(body.targetSize)
+    const purpose = normalizeOptionalText(body.purpose, 120)
+    const styleSelected = body.styleSelected === true
+    const styleName = styleSelected ? normalizeOptionalText(body.styleName, 200) : ''
+
+    const config = await this.readAuxConfig()
+    if (!config.apiKey) throw new Error('未配置辅助 API Key，无法优化提示词。请到设置里配置辅助 API。')
+
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are a prompt optimization assistant for an image generation workbench. Return the optimized prompt only in the requested format. Do not generate images.',
+      },
+      {
+        role: 'user',
+        content: pb.buildPromptOptimizationPrompt({
+          prompt,
+          negativePrompt,
+          mode,
+          targetSize,
+          purpose,
+          styleSelected,
+          styleName,
+        }),
+      },
+    ]
+    const responseBody = await this.requestAuxiliaryChat(config, messages, {
+      maxTokens: mode === 'quality' ? 2200 : 1800,
+    })
+    const text = pb.extractTextFromModelResponse(responseBody).trim()
+    if (!text) throw new Error('辅助 API 未返回优化后的提示词。')
+
+    // 返回形状对齐 serverApi.ts 的 OptimizeResult（无 model 字段；桌面版返回的 model 前端未用到，故此处省略）。
+    return {
+      mode,
+      text,
+      optimizedPrompt: pb.extractOptimizedPromptText(text) || text,
+      negativePrompt: pb.extractOptimizedNegativePromptText(text),
+    }
+  }
+
+  // 样图分析：对齐 server.js analyzeImages（多模态消息，图片以 dataUrl 塞进 image_url）。
+  async analyzeImage(body: {
+    images: { name?: string; dataUrl?: string; url?: string }[]
+    mode: string
+    targetSize?: string
+  }): Promise<AnalyzeResult> {
+    const pb = this.deps.promptBuilders
+    const mode = pb.normalizeAnalysisMode(body.mode)
+    const rawImages = Array.isArray(body.images) ? body.images : []
+    // prompt 模式只取 1 张，其余模式最多 8 张（对齐 server.js prepareAnalysisImages 的 limit）。
+    const images = await this.prepareAnalysisImages(rawImages, mode === 'prompt' ? 1 : 8)
+    if (images.length === 0) throw new Error('没有可读取的图片。')
+
+    const config = await this.readAuxConfig()
+    if (!config.apiKey) throw new Error('未配置辅助 API Key，无法分析图片。请到设置里配置辅助 API。')
+
+    const instruction = pb.buildAnalysisPrompt(mode, body.targetSize)
+    const messages = [
+      {
+        role: 'system',
+        content:
+          'You are an image prompt assistant for a local image generation workbench. Return practical prompts, not explanations.',
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: instruction },
+          ...images.map((image) => ({ type: 'image_url', image_url: { url: image.dataUrl } })),
+        ],
+      },
+    ]
+    const responseBody = await this.requestAuxiliaryChat(config, messages, {
+      maxTokens: pb.maxTokensForAnalysisMode(mode),
+    })
+    const text = pb.extractTextFromModelResponse(responseBody).trim()
+    if (!text) throw new Error('辅助 API 未返回分析文本。')
+
+    return {
+      mode,
+      model: config.model,
+      text,
+      images: images.map((image) => ({ name: image.name, mimeType: image.mimeType, bytes: image.bytes })),
+    }
+  }
+
+  // 收集分析用图片 → dataUrl（对齐 server.js prepareAnalysisImages）。
+  // dataUrl 直接用；相对路径 url 从本地读回再拼 dataUrl；读不到就跳过（不抛错）。
+  private async prepareAnalysisImages(
+    rawImages: { name?: string; dataUrl?: string; url?: string }[],
+    limit: number,
+  ): Promise<{ name: string; mimeType: string; bytes: number; dataUrl: string }[]> {
+    const sliced = rawImages.slice(0, limit)
+    const images: { name: string; mimeType: string; bytes: number; dataUrl: string }[] = []
+    for (let index = 0; index < sliced.length; index += 1) {
+      const image = sliced[index]
+      const resolved = await this.resolveReferenceImage(image)
+      if (!resolved?.base64) continue // 静默跳过读不到的
+      const mimeType = resolved.mimeType || 'image/png'
+      images.push({
+        name: String(image?.name || `Image ${index + 1}`).slice(0, 120),
+        mimeType,
+        bytes: base64ByteLength(resolved.base64),
+        dataUrl: `data:${mimeType};base64,${resolved.base64}`,
+      })
+    }
+    return images
+  }
+
+  // 辅助 API 连接测试：对齐 server.js testAuxiliaryConnection（发一条 "Reply with exactly: ok"）。
+  async testAuxiliary(input: {
+    useActiveProfile?: boolean
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+  }): Promise<TestResult> {
+    const config = await this.readAuxConfigFromInput(input)
+    const endpoint = buildOpenAiUrl(config.baseUrl, '/chat/completions')
+    if (!config.apiKey) return { ok: false, endpoint, error: '未配置辅助 API Key。' }
+    try {
+      const responseBody = await this.requestAuxiliaryChat(config, [{ role: 'user', content: 'Reply with exactly: ok' }], {
+        maxTokens: 24,
+      })
+      return {
+        ok: true,
+        endpoint,
+        model: config.model,
+        text: this.deps.promptBuilders.extractTextFromModelResponse(responseBody).slice(0, 80),
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        endpoint,
+        model: config.model,
+        error: (error as Error).message || String(error),
+        hint: '若为中转站，请确认该模型支持 vision / chat 兼容请求。',
+      }
+    }
+  }
+
+  // 辅助 API 模型列表：对齐 server.js listAuxiliaryModels（GET /models → extractModelIds）。
+  async listAuxiliaryModels(input: {
+    useActiveProfile?: boolean
+    apiKey?: string
+    baseUrl?: string
+    model?: string
+  }): Promise<AuxiliaryModelsResult> {
+    const config = await this.readAuxConfigFromInput(input)
+    const endpoint = buildOpenAiUrl(config.baseUrl, '/models')
+    if (!config.apiKey) return { ok: false, endpoint, models: [], error: '未配置辅助 API Key。' }
+    try {
+      const resp = await this.deps.http.get(endpoint, this.authHeaders(config.apiKey))
+      if (resp.status < 200 || resp.status >= 300) {
+        return {
+          ok: false,
+          endpoint,
+          status: resp.status,
+          models: [],
+          error: String(resp.json?.error?.message || resp.json?.message || resp.text || `HTTP ${resp.status}`).slice(0, 400),
+        }
+      }
+      const models = this.extractModelIds(resp.json)
+      return { ok: true, endpoint, status: resp.status, models, modelCount: models.length }
+    } catch (error) {
+      return {
+        ok: false,
+        endpoint,
+        models: [],
+        error: (error as Error).message || String(error),
+        hint: '若该中转站不暴露 /v1/models，请继续手动输入模型 id。',
+      }
+    }
+  }
+
+  // 保存辅助 API 配置：对齐 server.js saveAuxiliarySettings 的字段落盘 + 密钥单独存 AUX_SECRET_KEY。
+  async saveAuxiliary(body: AuxiliaryInput): Promise<AppSettings> {
+    const stored = await this.readStoredSettings()
+    stored.auxiliary = {
+      name: String(body.name || '辅助 API').trim().slice(0, 80) || '辅助 API',
+      useActiveProfile: body.useActiveProfile !== false,
+      baseUrl: stripTrailingSlash(body.baseUrl),
+      model: String(body.model || '').trim().slice(0, 120),
+    }
+    await this.writeStoredSettings(stored)
+    // 密钥：显式 clear 则删；传了非空 apiKey 才写（对齐「留空表示不改」）。
+    if (body.clearApiKey) {
+      await this.deps.secret.remove(AUX_SECRET_KEY)
+    } else if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
+      await this.deps.secret.set(AUX_SECRET_KEY, body.apiKey.trim())
+    }
+    return this.getSettings()
+  }
+
+  // 删除辅助 API 配置：手机版只有单一辅助配置，重置为默认（复用生图配置）并清掉独立密钥。
+  async deleteAuxiliary(_id: string): Promise<AppSettings> {
+    void _id
+    const stored = await this.readStoredSettings()
+    stored.auxiliary = createDefaultAux()
+    await this.writeStoredSettings(stored)
+    await this.deps.secret.remove(AUX_SECRET_KEY)
+    return this.getSettings()
   }
 }

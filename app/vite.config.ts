@@ -15,7 +15,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     base: isMobile ? './' : '/studio/', // 桌面：由 server.js 在 /studio 下托管；手机：相对路径离线加载
     resolve: {
-      alias: { '@': resolve(__dirname, 'src') },
+      // '@' → app 源码；'@shared/promptBuilders' → 仓库根 shared/ 下的 CJS 提示词构建器（桌面/手机共用）。
+      // 该别名与 tsconfig.json 的 paths 同名：tsc 用别名找 .d.ts 拿类型，vite 用别名找 .cjs 拿运行时实现。
+      // 这是把纯逻辑抽到 app/ 外部（vite 默认只扫 app/src）换来的取舍——用显式别名而非相对 import，
+      // 免得 mobileApi.ts 写一长串 '../../../shared/...' 且绕过 vite 的模块图。
+      alias: {
+        '@': resolve(__dirname, 'src'),
+        '@shared/promptBuilders': resolve(__dirname, '../shared/promptBuilders.cjs'),
+      },
     },
     server: {
       port: 5173,

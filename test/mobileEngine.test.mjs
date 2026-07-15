@@ -2,7 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import ts from '../app/node_modules/typescript/lib/typescript.js'
+
+// node 直接 require 共享提示词构建器的真货（.cjs）——引擎里这份是经 EngineDeps.promptBuilders 注入的，
+// 测试注入的就是 server.js / 真机所用的同一个模块，确保三端提示词逻辑单一事实源、行为一致。
+const require = createRequire(import.meta.url)
+const promptBuilders = require('../shared/promptBuilders.cjs')
 
 // 照抄 test/rerollParams.test.mjs 的「单文件 TS 免构建加载」范式：只转译 engine.ts 这一个文件
 // （它只用 import type 引类型，编译后不残留任何运行时 import），再包成 data: URL 动态 import。
@@ -147,7 +153,7 @@ async function makeEngine({ endpointMode = 'images' } = {}) {
   const http = new MockHttp()
   await secret.set('yaotu.apiKey', 'test-key')
   await file.writeText('config.json', JSON.stringify({ baseUrl: 'https://api.test.com', model: 'gpt-image-2', endpointMode }))
-  const engine = new MobileEngine({ http, file, secret, toDisplayUrl: (p) => p })
+  const engine = new MobileEngine({ http, file, secret, toDisplayUrl: (p) => p, promptBuilders })
   return { engine, file, secret, http }
 }
 
@@ -451,3 +457,211 @@ test('b64_json 不回归：默认响应仍识别 b64_json 并落盘，不触发�
   assert.equal(file.files.get(meta.images[0].url), IMG_B64)
   assert.match(meta.images[0].id, /\/image-01\.png$/)
 })
+
+// ===== 11. 辅助 API：优化提示词 payload 形状（系统+用户双消息、mode 决定 max_tokens）=====
+
+// 让辅助对话响应返回可解析的优化文本；断言引擎发出的 chat/completions payload 结构。
+function auxChatResponder(text) {
+  return (call) => {
+    if (call.url.includes('/chat/completions')) {
+      const body = { choices: [{ message: { content: text } }] }
+      return { status: 200, json: body, text: JSON.stringify(body) }
+    }
+    return { status: 200, json: {}, text: '{}' }
+  }
+}
+
+test('optimizePrompt：POST /v1/chat/completions，system+user 双消息，user 由共享构建器拼', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = auxChatResponder('优化后提示词：一只在雪地里的红狐\n反向提示词：模糊, 水印')
+
+  const result = await engine.optimizePrompt({
+    prompt: '红狐 雪地',
+    negativePrompt: '模糊',
+    mode: 'conservative',
+    targetSize: '1024x1024',
+  })
+
+  assert.equal(http.calls.length, 1)
+  const call = http.calls[0]
+  assert.equal(call.kind, 'postJson')
+  assert.match(call.url, /\/v1\/chat\/completions$/)
+  assert.equal(call.body.temperature, 0.2)
+  assert.equal(call.body.max_tokens, 1800, 'conservative → 1800')
+  assert.equal(call.body.messages.length, 2)
+  assert.equal(call.body.messages[0].role, 'system')
+  assert.equal(call.body.messages[1].role, 'user')
+  // user 消息必须来自共享构建器（含其固定的中文抬头 + 原始提示词回显）
+  assert.ok(call.body.messages[1].content.includes('请把下面的输入优化为图像生成用的内容提示词'))
+  assert.ok(call.body.messages[1].content.includes('红狐 雪地'))
+  // Bearer 用生图 key（默认 useActiveProfile 复用生图配置）
+  assert.equal(call.headers.Authorization, 'Bearer test-key')
+
+  // 返回形状：mode / text / optimizedPrompt / negativePrompt（解析自模型文本）
+  assert.equal(result.mode, 'conservative')
+  assert.equal(result.optimizedPrompt, '一只在雪地里的红狐')
+  assert.equal(result.negativePrompt, '模糊, 水印')
+})
+
+test('optimizePrompt：quality 模式 max_tokens=2200', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = auxChatResponder('优化后提示词：X\n反向提示词：无')
+  await engine.optimizePrompt({ prompt: '一段草稿文字', mode: 'quality' })
+  assert.equal(http.calls[0].body.max_tokens, 2200)
+})
+
+test('optimizePrompt：无 key 抛错（对齐 401 语义），不发请求', async () => {
+  const { engine, http, secret } = await makeEngine()
+  await secret.remove('yaotu.apiKey')
+  await assert.rejects(() => engine.optimizePrompt({ prompt: '一段草稿文字', mode: 'conservative' }), /辅助 API Key/)
+  assert.equal(http.calls.length, 0, '无 key 不应发出任何请求')
+})
+
+// ===== 12. 样图分析：多模态消息（dataUrl 进 image_url）、mode 决定 max_tokens =====
+
+test('analyzeImage：多模态 user 消息，dataUrl 进 image_url；style 模式 max_tokens=1800', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = auxChatResponder('风格名称：水彩\n风格反向词：无')
+
+  const result = await engine.analyzeImage({
+    images: [{ name: 'a.png', dataUrl: REF_DATA_URL }],
+    mode: 'style',
+  })
+
+  const call = http.calls[0]
+  assert.match(call.url, /\/v1\/chat\/completions$/)
+  assert.equal(call.body.max_tokens, 1800, 'style → 1800')
+  const content = call.body.messages[1].content
+  assert.ok(Array.isArray(content), 'user content 应为多模态数组')
+  const textPart = content.find((c) => c.type === 'text')
+  assert.ok(textPart.text.includes('style DNA'), 'text 部分应来自 buildStyleExtractionPrompt')
+  const imagePart = content.find((c) => c.type === 'image_url')
+  assert.equal(imagePart.image_url.url, REF_DATA_URL, '图片应作为 dataUrl 塞进 image_url')
+
+  assert.equal(result.mode, 'style')
+  assert.equal(result.model, 'gpt-4o-mini', '默认辅助模型')
+  assert.equal(result.images.length, 1)
+  assert.equal(result.images[0].name, 'a.png')
+  assert.ok(result.images[0].bytes > 0)
+})
+
+test('analyzeImage：相对路径参考图从本地读回并转 dataUrl', async () => {
+  const { engine, file, http } = await makeEngine()
+  http.responder = auxChatResponder('提示词：X\n反向提示词：无')
+  // 预置一张本地图（扁平 key = 相对路径），用 url 而非 dataUrl 引用它
+  await file.writeBase64('outputs/batch-x/references/reference-01.png', REF_B64)
+
+  const result = await engine.analyzeImage({
+    images: [{ name: 'ref', url: 'outputs/batch-x/references/reference-01.png' }],
+    mode: 'prompt',
+  })
+
+  const content = http.calls[0].body.messages[1].content
+  const imagePart = content.find((c) => c.type === 'image_url')
+  // 读回的 base64 应拼成 data:image/png;base64,<REF_B64>
+  assert.equal(imagePart.image_url.url, `data:image/png;base64,${REF_B64}`)
+  assert.equal(result.images.length, 1)
+})
+
+test('analyzeImage：prompt 模式只取 1 张（超出被截断）', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = auxChatResponder('提示词：X\n反向提示词：无')
+  const result = await engine.analyzeImage({
+    images: [
+      { name: '1', dataUrl: REF_DATA_URL },
+      { name: '2', dataUrl: REF_DATA_URL },
+    ],
+    mode: 'prompt',
+  })
+  assert.equal(result.images.length, 1, 'prompt 模式 limit=1')
+  const imageParts = http.calls[0].body.messages[1].content.filter((c) => c.type === 'image_url')
+  assert.equal(imageParts.length, 1)
+})
+
+test('analyzeImage：全部图片不可读 → 抛错（对齐 400 语义），不发请求', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = auxChatResponder('X')
+  await assert.rejects(
+    () => engine.analyzeImage({ images: [{ name: 'gone', url: 'outputs/missing/nope.png' }], mode: 'prompt' }),
+    /没有可读取的图片/,
+  )
+  assert.equal(http.calls.length, 0, '零可读图片不应发请求')
+})
+
+test('analyzeImage：无 key 抛错（对齐 401 语义）', async () => {
+  const { engine, secret } = await makeEngine()
+  await secret.remove('yaotu.apiKey')
+  await assert.rejects(
+    () => engine.analyzeImage({ images: [{ name: 'a', dataUrl: REF_DATA_URL }], mode: 'prompt' }),
+    /辅助 API Key/,
+  )
+})
+
+// ===== 13. 辅助 API 配置：保存（独立 key 落 AUX_SECRET_KEY）/ 复用生图配置 / 连接测试 =====
+
+test('saveAuxiliary：独立配置把 key 存进 yaotu.auxApiKey，getSettings 反映 model/baseUrl', async () => {
+  const { engine, secret } = await makeEngine()
+  await engine.saveAuxiliary({
+    name: '我的辅助',
+    useActiveProfile: false,
+    baseUrl: 'https://aux.test.com/',
+    model: 'gpt-4o',
+    apiKey: 'aux-secret',
+  })
+  assert.equal(await secret.get('yaotu.auxApiKey'), 'aux-secret', 'key 落独立密钥槽')
+
+  const settings = await engine.getSettings()
+  assert.equal(settings.auxiliary.useActiveProfile, false)
+  assert.equal(settings.auxiliary.model, 'gpt-4o')
+  assert.equal(settings.auxiliary.baseUrl, 'https://aux.test.com', '尾斜杠被剥掉')
+  assert.equal(settings.auxiliary.hasApiKey, true)
+})
+
+test('optimizePrompt：独立辅助配置用 aux key + aux baseUrl + 自定义 model', async () => {
+  const { engine, http } = await makeEngine()
+  await engine.saveAuxiliary({
+    name: '辅助',
+    useActiveProfile: false,
+    baseUrl: 'https://aux.test.com',
+    model: 'gpt-4o',
+    apiKey: 'aux-secret',
+  })
+  http.responder = auxChatResponder('优化后提示词：Y\n反向提示词：无')
+  await engine.optimizePrompt({ prompt: '一段草稿文字', mode: 'conservative' })
+
+  const call = http.calls[0]
+  assert.match(call.url, /^https:\/\/aux\.test\.com\/v1\/chat\/completions$/)
+  assert.equal(call.headers.Authorization, 'Bearer aux-secret')
+  assert.equal(call.body.model, 'gpt-4o')
+})
+
+test('testAuxiliary：成功返回 ok + 回声文本；无 key 返回 ok:false', async () => {
+  const { engine, http, secret } = await makeEngine()
+  http.responder = auxChatResponder('ok')
+  const good = await engine.testAuxiliary({ useActiveProfile: true })
+  assert.equal(good.ok, true)
+  assert.match(good.endpoint, /\/v1\/chat\/completions$/)
+  assert.equal(good.text, 'ok')
+
+  await secret.remove('yaotu.apiKey')
+  const bad = await engine.testAuxiliary({ useActiveProfile: true })
+  assert.equal(bad.ok, false)
+  assert.ok(bad.error)
+})
+
+test('listAuxiliaryModels：GET /v1/models → 去重排序的 id 列表', async () => {
+  const { engine, http } = await makeEngine()
+  http.responder = (call) => {
+    if (call.url.includes('/models')) {
+      const body = { data: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] }
+      return { status: 200, json: body, text: JSON.stringify(body) }
+    }
+    return { status: 200, json: {}, text: '{}' }
+  }
+  const result = await engine.listAuxiliaryModels({ useActiveProfile: true })
+  assert.equal(result.ok, true)
+  assert.match(result.endpoint, /\/v1\/models$/)
+  assert.deepEqual(result.models, ['gpt-4o', 'gpt-4o-mini'])
+  assert.equal(result.modelCount, 2)
+})
+

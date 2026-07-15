@@ -1,5 +1,5 @@
 // 手机版 api 实现：把 MobileEngine 各方法转发成 ApiContract 的同名字段，
-// 引擎没做的重功能（漫剧工作台全家桶 + 优化提示词/样图分析/辅助模型/更新检测）统一 stub 抛错。
+// 引擎没做的重功能（漫剧工作台全家桶 + 更新检测）统一 stub 抛错。
 // 这些 stub 必须存在——ApiContract 是从桌面版 api 对象派生的完整类型，缺一个方法 tsc 就报错；
 // UI 会用 capabilities 把入口藏掉，正常不会走到这些兜底路径。
 import {
@@ -9,6 +9,9 @@ import {
   capacitorToDisplayUrl,
 } from './capacitorAdapters'
 import { MobileEngine } from './engine'
+// 提示词构建器（桌面/手机共用的纯逻辑）真货：mobileApi 是「组装层」，可以 import 运行时值——
+// engine.ts 那条「只能 import type」的约束只针对引擎核心文件，不波及这里。别名经 vite 解析到 shared/promptBuilders.cjs。
+import * as promptBuilders from '@shared/promptBuilders'
 import type { ApiContract } from '@/lib/serverApi'
 
 const engine = new MobileEngine({
@@ -16,6 +19,7 @@ const engine = new MobileEngine({
   file: capacitorFileAdapter,
   secret: capacitorSecretAdapter,
   toDisplayUrl: capacitorToDisplayUrl,
+  promptBuilders,
 })
 
 // 统一的「暂未支持」兜底：文案固定，供所有 stub 复用。
@@ -44,13 +48,15 @@ export const mobileApi: ApiContract = {
   getUiPrefs: () => engine.getUiPrefs(),
   setUiPrefs: (patch) => engine.setUiPrefs(patch),
 
-  // —— 辅助 API / 优化 / 分析 / 更新检测：手机版不支持 ——
-  testAuxiliary: notSupported,
-  optimizePrompt: notSupported,
-  analyzeImage: notSupported,
-  saveAuxiliary: notSupported,
-  deleteAuxiliary: notSupported,
-  listAuxiliaryModels: notSupported,
+  // —— 辅助 API / 优化 / 分析：M3 起手机版支持（走注入的共享构建器 + HttpAdapter）——
+  testAuxiliary: (body) => engine.testAuxiliary(body),
+  optimizePrompt: (body) => engine.optimizePrompt(body),
+  analyzeImage: (body) => engine.analyzeImage(body),
+  saveAuxiliary: (body) => engine.saveAuxiliary(body),
+  deleteAuxiliary: (id) => engine.deleteAuxiliary(id),
+  listAuxiliaryModels: (body) => engine.listAuxiliaryModels(body),
+
+  // —— 更新检测：手机版不支持（更新推送靠桌面 electron-updater）——
   getUpdateStatus: notSupported,
   checkUpdate: notSupported,
 
