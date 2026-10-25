@@ -3960,7 +3960,10 @@ function getAuxiliaryApiConfig() {
 function getAuxiliaryApiConfigFromInput(input = {}) {
   const settings = loadSettings();
   const activeConfig = getActiveApiConfig();
-  const existing = getActiveAuxiliaryProfile(settings);
+  const requestedProfileId = input.profileId ? normalizeProfileId(input.profileId) : "";
+  const existing = normalizeAuxiliaryProfiles(settings.auxiliaryProfiles, settings.auxiliary)
+    .find((profile) => profile.id === requestedProfileId)
+    || getActiveAuxiliaryProfile(settings);
   const useActiveProfile = Object.prototype.hasOwnProperty.call(input, "useActiveProfile")
     ? input.useActiveProfile !== false
     : existing.useActiveProfile;

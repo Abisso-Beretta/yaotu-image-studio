@@ -19,6 +19,23 @@ const ALBUM_NAME = '妖荼'
 
 // 「妖荼」相册的绝对路径缓存：首次成功建立/确认后缓存，避免每次保存都 getAlbumsPath + createAlbum。
 let cachedAlbumIdentifier: string | null = null
+let saveSequence = 0
+
+// 各批次都会从 image-01 开始编号；只用源文件名会让相册插件覆盖别的批次。
+// 保留批次信息，并为每次保存分配独立后缀（包括同一张图重复保存或并发保存）。
+function makeAlbumFileName(relPath: string): string {
+  const sourceName = relPath
+    .split('/')
+    .slice(-2)
+    .join('-')
+    .replace(/\.[^.]+$/, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .slice(0, 100) || 'image'
+  const uniqueId = typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `${Date.now().toString(36)}-${++saveSequence}-${Math.random().toString(36).slice(2, 10)}`
+  return `yaotu-${sourceName}-${uniqueId}`
+}
 
 // 确保「妖荼」相册存在，返回它的绝对路径（= savePhoto 需要的 albumIdentifier）。
 async function ensureAlbumIdentifier(): Promise<string> {
@@ -53,9 +70,8 @@ export async function saveImageToAlbum(relPath: string): Promise<void> {
 
   const albumIdentifier = await ensureAlbumIdentifier()
 
-  // fileName 不带扩展名（插件从源文件继承扩展名，保持 .png）；用源文件名去掉扩展名，便于识别。
-  const base = clean.split('/').pop() || 'image'
-  const fileName = base.replace(/\.[^.]+$/, '')
+  // fileName 不带扩展名：插件从源文件继承 png/jpeg/webp 等格式。
+  const fileName = makeAlbumFileName(clean)
 
   await Media.savePhoto({ path: uri, albumIdentifier, fileName })
 }

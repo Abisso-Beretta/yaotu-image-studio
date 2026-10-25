@@ -599,16 +599,17 @@ test('analyzeImage：无 key 抛错（对齐 401 语义）', async () => {
 
 // ===== 13. 辅助 API 配置：保存（独立 key 落 AUX_SECRET_KEY）/ 复用生图配置 / 连接测试 =====
 
-test('saveAuxiliary：独立配置把 key 存进 yaotu.auxApiKey，getSettings 反映 model/baseUrl', async () => {
+test('saveAuxiliary：独立配置把 key 存进 profile 专属安全槽，getSettings 反映 model/baseUrl', async () => {
   const { engine, secret } = await makeEngine()
   await engine.saveAuxiliary({
+    profileId: 'aux-mobile',
     name: '我的辅助',
     useActiveProfile: false,
     baseUrl: 'https://aux.test.com/',
     model: 'gpt-4o',
     apiKey: 'aux-secret',
   })
-  assert.equal(await secret.get('yaotu.auxApiKey'), 'aux-secret', 'key 落独立密钥槽')
+  assert.equal(await secret.get('yaotu.auxApiKey.aux-mobile'), 'aux-secret', 'key 落该 profile 的独立密钥槽')
 
   const settings = await engine.getSettings()
   assert.equal(settings.auxiliary.useActiveProfile, false)
@@ -620,6 +621,7 @@ test('saveAuxiliary：独立配置把 key 存进 yaotu.auxApiKey，getSettings �
 test('optimizePrompt：独立辅助配置用 aux key + aux baseUrl + 自定义 model', async () => {
   const { engine, http } = await makeEngine()
   await engine.saveAuxiliary({
+    profileId: 'aux-mobile',
     name: '辅助',
     useActiveProfile: false,
     baseUrl: 'https://aux.test.com',
@@ -663,5 +665,117 @@ test('listAuxiliaryModels：GET /v1/models → 去重排序的 id 列表', async
   assert.match(result.endpoint, /\/v1\/models$/)
   assert.deepEqual(result.models, ['gpt-4o', 'gpt-4o-mini'])
   assert.equal(result.modelCount, 2)
+})
+
+// ===== 14. 手机版多 API 配置：新增不覆盖、切换使用独立 key、删除回退 =====
+
+test('生图 API：新建两个 profile 不覆盖，切换后请求使用各自地址、模型和 key', async () => {
+  const { engine, http } = await makeEngine()
+
+  let settings = await engine.saveProfile({
+    profileId: 'profile-second',
+    name: '第二中转站',
+    apiKey: 'second-key',
+    baseUrl: 'https://second.test.com/',
+    imageModel: 'second-image-model',
+    endpointMode: 'images',
+    setActive: true,
+  })
+  assert.equal(settings.profiles.length, 2)
+  assert.equal(settings.activeProfileId, 'profile-second')
+  assert.equal(settings.profiles.find((p) => p.id === 'mobile').baseUrl, 'https://api.test.com')
+
+  http.calls.length = 0
+  await engine.generate({ ...baseParams, prompt: 'a portrait lit by warm afternoon sunlight' })
+  assert.match(http.calls[0].url, /^https:\/\/second\.test\.com\/v1\/images\/generations$/)
+  assert.equal(http.calls[0].body.model, 'second-image-model')
+  assert.equal(http.calls[0].headers.Authorization, 'Bearer second-key')
+
+  settings = await engine.saveProfile({
+    profileId: 'mobile',
+    name: '手机配置',
+    baseUrl: 'https://api.test.com',
+    imageModel: 'gpt-image-2',
+    endpointMode: 'images',
+    setActive: true,
+  })
+  assert.equal(settings.activeProfileId, 'mobile')
+  http.calls.length = 0
+  await engine.generate({ ...baseParams, prompt: 'a portrait lit by cool morning sunlight' })
+  assert.equal(http.calls[0].headers.Authorization, 'Bearer test-key', '旧版固定 key 应迁移给 mobile profile')
+
+  settings = await engine.deleteProfile('mobile')
+  assert.equal(settings.profiles.length, 1)
+  assert.equal(settings.activeProfileId, 'profile-second')
+})
+
+test('生图 API：不传 profileId 的“新建”生成独立 id，不会初始化已有配置', async () => {
+  const { engine } = await makeEngine()
+  const settings = await engine.saveProfile({
+    name: '新建配置',
+    apiKey: 'new-key',
+    baseUrl: 'https://new.test.com',
+    imageModel: 'new-model',
+    endpointMode: 'responses',
+  })
+
+  assert.equal(settings.profiles.length, 2)
+  assert.ok(settings.profiles.some((p) => p.id === 'mobile' && p.name === '手机配置'))
+  assert.ok(settings.profiles.some((p) => p.id !== 'mobile' && p.name === '新建配置'))
+})
+
+test('辅助 API：多个 profile 独立保存与切换，优化请求使用所选配置的 key', async () => {
+  const { engine, http } = await makeEngine()
+  await engine.saveAuxiliary({
+    profileId: 'aux-one',
+    name: '辅助一',
+    useActiveProfile: false,
+    baseUrl: 'https://aux-one.test.com',
+    model: 'vision-one',
+    apiKey: 'aux-key-one',
+    setActive: true,
+  })
+  let settings = await engine.saveAuxiliary({
+    profileId: 'aux-two',
+    name: '辅助二',
+    useActiveProfile: false,
+    baseUrl: 'https://aux-two.test.com',
+    model: 'vision-two',
+    apiKey: 'aux-key-two',
+    setActive: true,
+  })
+  assert.equal(settings.auxiliaryProfiles.length, 3)
+  assert.equal(settings.activeAuxiliaryProfileId, 'aux-two')
+
+  settings = await engine.saveAuxiliary({
+    profileId: 'aux-one',
+    name: '辅助一',
+    useActiveProfile: false,
+    baseUrl: 'https://aux-one.test.com',
+    model: 'vision-one',
+    setActive: true,
+  })
+  assert.equal(settings.activeAuxiliaryProfileId, 'aux-one')
+  http.responder = auxChatResponder('优化后提示词：Z\n反向提示词：无')
+  http.calls.length = 0
+  await engine.optimizePrompt({ prompt: '一段用于验证切换的画面描述', mode: 'conservative' })
+  assert.match(http.calls[0].url, /^https:\/\/aux-one\.test\.com\/v1\/chat\/completions$/)
+  assert.equal(http.calls[0].headers.Authorization, 'Bearer aux-key-one')
+  assert.equal(http.calls[0].body.model, 'vision-one')
+
+  http.responder = auxChatResponder('ok')
+  http.calls.length = 0
+  const testResult = await engine.testAuxiliary({
+    profileId: 'aux-two',
+    useActiveProfile: false,
+    model: 'vision-two',
+  })
+  assert.equal(testResult.ok, true)
+  assert.match(http.calls[0].url, /^https:\/\/aux-two\.test\.com\/v1\/chat\/completions$/)
+  assert.equal(http.calls[0].headers.Authorization, 'Bearer aux-key-two')
+
+  settings = await engine.deleteAuxiliary('aux-one')
+  assert.ok(!settings.auxiliaryProfiles.some((p) => p.id === 'aux-one'))
+  assert.equal(settings.activeAuxiliaryProfileId, 'aux-mobile')
 })
 

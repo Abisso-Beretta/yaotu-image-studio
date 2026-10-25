@@ -238,6 +238,7 @@ function AuxiliarySection() {
             disabled={auxModelsBusy}
             onClick={() =>
               listAuxModels({
+                profileId: form.profileId,
                 useActiveProfile: form.useActiveProfile,
                 apiKey: form.apiKey || undefined,
                 baseUrl: form.baseUrl,
@@ -289,6 +290,7 @@ function AuxiliarySection() {
           disabled={auxTestBusy || settingsBusy}
           onClick={() =>
             testAuxiliary({
+              profileId: form.profileId,
               useActiveProfile: form.useActiveProfile,
               apiKey: form.apiKey || undefined,
               baseUrl: form.baseUrl,
@@ -529,7 +531,7 @@ export default function MobileSettingsDrawer() {
               <button
                 onClick={() => {
                   setEditingId(null)
-                  setForm({ ...EMPTY })
+                  setForm({ ...EMPTY, profileId: `profile-${Date.now()}` })
                 }}
                 className="min-h-[36px] text-xs px-3 rounded-full border border-dashed border-line text-neutral-400"
               >

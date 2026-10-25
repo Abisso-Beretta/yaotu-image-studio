@@ -80,6 +80,7 @@ export const api = {
     postJson<TestResult>('/api/test-connection', body),
 
   testAuxiliary: (body: {
+    profileId?: string
     useActiveProfile?: boolean
     apiKey?: string
     baseUrl?: string
@@ -281,6 +282,7 @@ export const api = {
     postJson<AppSettings>('/api/auxiliary-settings/delete', { id }),
 
   listAuxiliaryModels: (body: {
+    profileId?: string
     useActiveProfile?: boolean
     apiKey?: string
     baseUrl?: string

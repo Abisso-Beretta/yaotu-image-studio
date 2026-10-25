@@ -4,6 +4,7 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem'
 import { SecureStoragePlugin } from 'capacitor-secure-storage-plugin'
 import type { FileAdapter, HttpAdapter, HttpResponse, SecretAdapter } from './adapters'
+import { buildNativeMultipartBody } from './nativeMultipart'
 
 const DIR = Directory.Data
 
@@ -44,38 +45,20 @@ export const capacitorHttpAdapter: HttpAdapter = {
     return normalizeHttpResponse(resp)
   },
 
-  // ⚠️ 未在真机上验证：按 Capacitor 6 CapacitorHttp 文档的最佳努力实现。
-  // CapacitorHttp 原生层做 multipart 文件上传不像 web fetch(FormData) 那样直接，
-  // 这里手动拼一份 multipart/form-data body（含 base64 解码后的二进制），整体作为 data 传。
-  // 说明：CapacitorHttp 会按 Content-Type 决定序列化方式；显式给一个带 boundary 的
-  // multipart Content-Type，并把 body 拼成字符串（二进制部分用 latin1 逐字节映射），
-  // 让原生层按原样字节发送。真机行为需实测，若上游拒收再改走原生插件方案。
+  // Capacitor 6 的 Android 原生层识别 dataType=formData，并将 base64File 项解码后直接写入
+  // multipart 输出流。不能在 JS 中把二进制拼成字符串：跨原生桥时字符串会按 UTF-8 编码，
+  // 0x80 以上的图片字节会改变，导致只有带参考图的 /images/edits 请求报错。
   async postMultipart(url, fields, files, headers = {}) {
-    const boundary = `----YaoTuBoundary${Math.random().toString(36).slice(2)}`
-    const CRLF = '\r\n'
-    let body = ''
-    for (const [key, value] of Object.entries(fields)) {
-      body += `--${boundary}${CRLF}`
-      body += `Content-Disposition: form-data; name="${key}"${CRLF}${CRLF}`
-      body += `${value}${CRLF}`
-    }
-    for (const f of files) {
-      // base64 → 二进制字符串（每字节一个 char，0~255），作为 multipart 内容原样发送
-      const binary = atob(f.base64)
-      body += `--${boundary}${CRLF}`
-      body += `Content-Disposition: form-data; name="${f.fieldName}"; filename="${f.fileName}"${CRLF}`
-      body += `Content-Type: ${f.mimeType}${CRLF}${CRLF}`
-      body += `${binary}${CRLF}`
-    }
-    body += `--${boundary}--${CRLF}`
+    const multipart = buildNativeMultipartBody(fields, files)
 
     const resp = await CapacitorHttp.post({
       url,
       headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
         ...headers,
+        'Content-Type': `multipart/form-data; boundary=${multipart.boundary}`,
       },
-      data: body,
+      data: multipart.entries,
+      dataType: 'formData',
     })
     return normalizeHttpResponse(resp)
   },

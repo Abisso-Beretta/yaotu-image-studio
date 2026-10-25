@@ -214,11 +214,11 @@ interface GeneratorState {
   auxModelsError: string | null
   auxTestResult: TestResult | null
   auxTestBusy: boolean
-  testAuxiliary: (input: { useActiveProfile?: boolean; apiKey?: string; baseUrl?: string; model?: string }) => Promise<void>
+  testAuxiliary: (input: { profileId?: string; useActiveProfile?: boolean; apiKey?: string; baseUrl?: string; model?: string }) => Promise<void>
   saveAuxiliary: (input: AuxiliaryInput) => Promise<void>
   setActiveAuxiliary: (id: string) => Promise<void>
   removeAuxiliary: (id: string) => Promise<void>
-  listAuxModels: (input: { useActiveProfile?: boolean; apiKey?: string; baseUrl?: string }) => Promise<void>
+  listAuxModels: (input: { profileId?: string; useActiveProfile?: boolean; apiKey?: string; baseUrl?: string }) => Promise<void>
 }
 
 let refSeq = 0

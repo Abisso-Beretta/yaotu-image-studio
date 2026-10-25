@@ -531,12 +531,24 @@ function upsertRecentItem(items: unknown, item: SavedItem): SavedItem[] {
   return [nextItem, ...list].slice(0, 80)
 }
 
-// 本地存储的原始设置形状（存三个收藏集合 + 辅助 API 配置；profiles 由 config.json + secret 派生，不落这里）。
+// 本地存储的原始设置形状。API key 仍只进安全存储；这里只保存各配置的非敏感字段和激活项。
 interface StoredSettings {
   savedPrompts: SavedItem[]
   savedStyles: SavedItem[]
   recentPrompts: SavedItem[]
-  auxiliary: StoredAux
+  activeProfileId: string
+  profiles: StoredProfile[]
+  activeAuxiliaryProfileId: string
+  auxiliaryProfiles: StoredAuxProfile[]
+  auxiliary: StoredAuxProfile
+}
+
+interface StoredProfile {
+  id: string
+  name: string
+  baseUrl: string
+  model: string
+  endpointMode: string
 }
 
 // 辅助 API 配置（优化/分析用的对话模型）。对齐 server.js AppSettings.auxiliary 的字段子集：
@@ -546,6 +558,10 @@ interface StoredAux {
   useActiveProfile: boolean
   baseUrl: string
   model: string
+}
+
+interface StoredAuxProfile extends StoredAux {
+  id: string
 }
 
 function createDefaultAux(): StoredAux {
@@ -560,6 +576,38 @@ function normalizeStoredAux(value: unknown): StoredAux {
     baseUrl: stripTrailingSlash(raw.baseUrl),
     model: String(raw.model || '').trim().slice(0, 120),
   }
+}
+
+function normalizeProfileId(value: unknown, fallback: string): string {
+  return normalizeSavedItemId(value) || fallback
+}
+
+function normalizeStoredProfile(value: unknown, fallbackId: string, fallbackConfig: StoredConfig): StoredProfile {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  return {
+    id: normalizeProfileId(raw.id, fallbackId),
+    name: String(raw.name || '手机配置').trim().slice(0, 80) || '手机配置',
+    baseUrl: stripTrailingSlash(raw.baseUrl || fallbackConfig.baseUrl),
+    model: String(raw.model || raw.imageModel || fallbackConfig.model || 'gpt-image-2').trim().slice(0, 120),
+    endpointMode: String(raw.endpointMode || fallbackConfig.endpointMode || 'images').trim() || 'images',
+  }
+}
+
+function normalizeStoredAuxProfile(value: unknown, fallbackId: string): StoredAuxProfile {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  return {
+    id: normalizeProfileId(raw.id, fallbackId),
+    ...normalizeStoredAux(raw),
+  }
+}
+
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false
+    seen.add(item.id)
+    return true
+  })
 }
 
 interface StoredConfig {
@@ -598,19 +646,49 @@ export class MobileEngine {
     await this.deps.file.writeText(CONFIG_PATH, JSON.stringify(config, null, 2))
   }
 
-  private async hasApiKey(): Promise<boolean> {
-    const key = await this.deps.secret.get(SECRET_KEY)
-    return Boolean(key)
+  private profileSecretKey(profileId: string): string {
+    return `${SECRET_KEY}.${normalizeProfileId(profileId, 'mobile')}`
+  }
+
+  private auxiliarySecretKey(profileId: string): string {
+    return `${AUX_SECRET_KEY}.${normalizeProfileId(profileId, 'aux-mobile')}`
+  }
+
+  private async getProfileApiKey(profileId: string): Promise<string> {
+    const id = normalizeProfileId(profileId, 'mobile')
+    const stored = String((await this.deps.secret.get(this.profileSecretKey(id))) || '').trim()
+    if (stored) return stored
+    // 旧版只有这一个固定密钥槽。仅让迁移出的 mobile 配置继承，避免新配置误用旧 key。
+    if (id === 'mobile') return String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    return ''
+  }
+
+  private async getAuxiliaryApiKey(profileId: string): Promise<string> {
+    const id = normalizeProfileId(profileId, 'aux-mobile')
+    const stored = String((await this.deps.secret.get(this.auxiliarySecretKey(id))) || '').trim()
+    if (stored) return stored
+    if (id === 'aux-mobile') return String((await this.deps.secret.get(AUX_SECRET_KEY)) || '').trim()
+    return ''
+  }
+
+  private async getActiveProfileContext(): Promise<{
+    stored: StoredSettings
+    profile: StoredProfile
+    apiKey: string
+  }> {
+    const stored = await this.readStoredSettings()
+    const profile = stored.profiles.find((item) => item.id === stored.activeProfileId) || stored.profiles[0]
+    return { stored, profile, apiKey: await this.getProfileApiKey(profile.id) }
   }
 
   async getConfig(): Promise<AppConfig> {
-    const config = await this.readConfig()
+    const { profile, apiKey } = await this.getActiveProfileContext()
     return {
-      hasApiKey: await this.hasApiKey(),
-      defaultModel: config.model || 'gpt-image-2',
-      baseUrl: config.baseUrl,
-      endpointMode: config.endpointMode || 'images',
-      activeProfileName: '手机配置',
+      hasApiKey: Boolean(apiKey),
+      defaultModel: profile.model || 'gpt-image-2',
+      baseUrl: profile.baseUrl,
+      endpointMode: profile.endpointMode || 'images',
+      activeProfileName: profile.name,
       outputDir: 'app-data/outputs', // 展示用字符串，非真实系统路径
     }
   }
@@ -618,8 +696,7 @@ export class MobileEngine {
   // ---------- 生图主流程 ----------
 
   async generate(body: GenerateParams, signal?: AbortSignal): Promise<GenerateResult> {
-    const config = await this.readConfig()
-    const apiKey = String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    const { profile: config, apiKey } = await this.getActiveProfileContext()
     if (!apiKey) {
       throw new Error('未配置 API Key。请到设置里填入中转站的 API Key。')
     }
@@ -1076,6 +1153,7 @@ export class MobileEngine {
 
   private async readStoredSettings(): Promise<StoredSettings> {
     const text = await this.deps.file.readText(SETTINGS_PATH)
+    const legacyConfig = await this.readConfig()
     let parsed: any = {}
     if (text) {
       try {
@@ -1084,11 +1162,50 @@ export class MobileEngine {
         parsed = {}
       }
     }
+    const fallbackProfile = normalizeStoredProfile(
+      { id: 'mobile', name: '手机配置', ...legacyConfig },
+      'mobile',
+      legacyConfig,
+    )
+    const profiles = uniqueById<StoredProfile>(
+      (Array.isArray(parsed.profiles) ? parsed.profiles : [fallbackProfile])
+        .map((profile: unknown, index: number) =>
+          normalizeStoredProfile(profile, index === 0 ? 'mobile' : `profile-${index + 1}`, legacyConfig),
+        ),
+    ).slice(0, 50)
+    if (profiles.length === 0) profiles.push(fallbackProfile)
+    const activeProfileId = profiles.some((profile) => profile.id === parsed.activeProfileId)
+      ? String(parsed.activeProfileId)
+      : profiles[0].id
+
+    const legacyAux = normalizeStoredAuxProfile(
+      { id: 'aux-mobile', ...(parsed.auxiliary || createDefaultAux()) },
+      'aux-mobile',
+    )
+    const auxiliaryProfiles = uniqueById<StoredAuxProfile>(
+      (Array.isArray(parsed.auxiliaryProfiles) ? parsed.auxiliaryProfiles : [legacyAux])
+        .map((profile: unknown, index: number) =>
+          normalizeStoredAuxProfile(profile, index === 0 ? 'aux-mobile' : `aux-${index + 1}`),
+        ),
+    ).slice(0, 50)
+    if (auxiliaryProfiles.length === 0) auxiliaryProfiles.push(legacyAux)
+    const activeAuxiliaryProfileId = auxiliaryProfiles.some(
+      (profile) => profile.id === parsed.activeAuxiliaryProfileId,
+    )
+      ? String(parsed.activeAuxiliaryProfileId)
+      : auxiliaryProfiles[0].id
+    const auxiliary =
+      auxiliaryProfiles.find((profile) => profile.id === activeAuxiliaryProfileId) || auxiliaryProfiles[0]
+
     return {
       savedPrompts: normalizeSavedItems(parsed.savedPrompts),
       savedStyles: normalizeSavedItems(parsed.savedStyles),
       recentPrompts: normalizeSavedItems(parsed.recentPrompts),
-      auxiliary: normalizeStoredAux(parsed.auxiliary),
+      activeProfileId,
+      profiles,
+      activeAuxiliaryProfileId,
+      auxiliaryProfiles,
+      auxiliary,
     }
   }
 
@@ -1096,39 +1213,50 @@ export class MobileEngine {
     await this.deps.file.writeText(SETTINGS_PATH, JSON.stringify(settings, null, 2))
   }
 
-  // 把手机版单一配置包装成 AppSettings（前端类型要求 profiles 是数组）。
   async getSettings(): Promise<AppSettings> {
-    const config = await this.readConfig()
-    const hasKey = await this.hasApiKey()
     const stored = await this.readStoredSettings()
-    const aux = stored.auxiliary
-    // 辅助 API 是否已配 key：复用生图配置时看生图 key，否则看 AUX_SECRET_KEY。
-    const auxHasKey = aux.useActiveProfile ? hasKey : Boolean(await this.deps.secret.get(AUX_SECRET_KEY))
-    const profile: SettingsProfile = {
-      id: 'mobile',
-      name: '手机配置',
-      baseUrl: config.baseUrl,
-      imageModel: config.model || 'gpt-image-2',
-      endpointMode: config.endpointMode || 'images',
-      hasApiKey: hasKey,
-      apiKeyMask: hasKey ? '已配置' : '',
-    }
-    const auxProfile = {
-      id: 'aux-mobile',
-      name: aux.name || '辅助 API',
-      useActiveProfile: aux.useActiveProfile,
-      // 复用生图配置时对外展示生图 baseUrl，独立时展示自己的（回退生图 baseUrl）。
-      baseUrl: aux.useActiveProfile ? config.baseUrl : aux.baseUrl || config.baseUrl,
-      model: aux.model,
-      hasApiKey: auxHasKey,
-      apiKeyMask: auxHasKey ? '已配置' : '',
-    }
+    const activeProfile =
+      stored.profiles.find((profile) => profile.id === stored.activeProfileId) || stored.profiles[0]
+    const profiles: SettingsProfile[] = await Promise.all(
+      stored.profiles.map(async (profile) => {
+        const hasApiKey = Boolean(await this.getProfileApiKey(profile.id))
+        return {
+          id: profile.id,
+          name: profile.name,
+          baseUrl: profile.baseUrl,
+          imageModel: profile.model || 'gpt-image-2',
+          endpointMode: profile.endpointMode || 'images',
+          hasApiKey,
+          apiKeyMask: hasApiKey ? '已配置' : '',
+        }
+      }),
+    )
+    const activeGenHasKey = Boolean(await this.getProfileApiKey(activeProfile.id))
+    const auxiliaryProfiles = await Promise.all(
+      stored.auxiliaryProfiles.map(async (profile) => {
+        const hasApiKey = profile.useActiveProfile
+          ? activeGenHasKey
+          : Boolean(await this.getAuxiliaryApiKey(profile.id))
+        return {
+          id: profile.id,
+          name: profile.name || '辅助 API',
+          useActiveProfile: profile.useActiveProfile,
+          baseUrl: profile.useActiveProfile ? activeProfile.baseUrl : profile.baseUrl || activeProfile.baseUrl,
+          model: profile.model || DEFAULT_AUX_MODEL,
+          hasApiKey,
+          apiKeyMask: hasApiKey ? '已配置' : '',
+        }
+      }),
+    )
+    const auxiliary =
+      auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      auxiliaryProfiles[0]
     return {
-      activeProfileId: 'mobile',
-      profiles: [profile],
-      activeAuxiliaryProfileId: 'aux-mobile',
-      auxiliaryProfiles: [auxProfile],
-      auxiliary: auxProfile,
+      activeProfileId: stored.activeProfileId,
+      profiles,
+      activeAuxiliaryProfileId: stored.activeAuxiliaryProfileId,
+      auxiliaryProfiles,
+      auxiliary,
       savedPrompts: stored.savedPrompts,
       savedStyles: stored.savedStyles,
       recentPrompts: stored.recentPrompts,
@@ -1136,22 +1264,52 @@ export class MobileEngine {
   }
 
   async saveProfile(input: ProfileInput): Promise<AppSettings> {
-    const current = await this.readConfig()
-    await this.writeConfig({
-      baseUrl: String(input.baseUrl ?? current.baseUrl ?? '').trim(),
-      model: String(input.imageModel ?? current.model ?? '').trim(),
-      endpointMode: String(input.endpointMode ?? current.endpointMode ?? 'images').trim() || 'images',
-    })
+    const stored = await this.readStoredSettings()
+    const profileId = normalizeProfileId(input.profileId, `profile-${Date.now()}`)
+    const existingIndex = stored.profiles.findIndex((profile) => profile.id === profileId)
+    const existing = existingIndex >= 0 ? stored.profiles[existingIndex] : undefined
+    const nextProfile: StoredProfile = {
+      id: profileId,
+      name: String(input.name || existing?.name || 'API 配置').trim().slice(0, 80) || 'API 配置',
+      baseUrl: stripTrailingSlash(input.baseUrl || existing?.baseUrl || ''),
+      model: String(input.imageModel || existing?.model || 'gpt-image-2').trim().slice(0, 120),
+      endpointMode: String(input.endpointMode || existing?.endpointMode || 'images').trim() || 'images',
+    }
+    if (existingIndex >= 0) stored.profiles[existingIndex] = nextProfile
+    else stored.profiles.push(nextProfile)
+    if (input.setActive !== false) stored.activeProfileId = nextProfile.id
+
     // 只有显式传了非空 apiKey 才更新密钥（对齐桌面「留空表示不改」的习惯）。
     if (typeof input.apiKey === 'string' && input.apiKey.trim()) {
-      await this.deps.secret.set(SECRET_KEY, input.apiKey.trim())
+      await this.deps.secret.set(this.profileSecretKey(nextProfile.id), input.apiKey.trim())
+    }
+    stored.auxiliary =
+      stored.auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      stored.auxiliaryProfiles[0]
+    await this.writeStoredSettings(stored)
+    if (stored.activeProfileId === nextProfile.id) {
+      await this.writeConfig({
+        baseUrl: nextProfile.baseUrl,
+        model: nextProfile.model,
+        endpointMode: nextProfile.endpointMode,
+      })
     }
     return this.getSettings()
   }
 
-  // 手机版只有单一配置，没有多 profile 可删——no-op 返回当前设置（简化，见报告）。
-  async deleteProfile(_profileId: string): Promise<AppSettings> {
-    void _profileId
+  async deleteProfile(profileId: string): Promise<AppSettings> {
+    const stored = await this.readStoredSettings()
+    const id = normalizeProfileId(profileId, '')
+    const existingIndex = stored.profiles.findIndex((profile) => profile.id === id)
+    if (existingIndex < 0) throw new Error('API 配置不存在。')
+    if (stored.profiles.length <= 1) throw new Error('至少需要保留一个 API 配置。')
+    stored.profiles.splice(existingIndex, 1)
+    if (stored.activeProfileId === id) stored.activeProfileId = stored.profiles[0].id
+    const active = stored.profiles.find((profile) => profile.id === stored.activeProfileId) || stored.profiles[0]
+    await this.writeStoredSettings(stored)
+    await this.writeConfig({ baseUrl: active.baseUrl, model: active.model, endpointMode: active.endpointMode })
+    await this.deps.secret.remove(this.profileSecretKey(id))
+    if (id === 'mobile') await this.deps.secret.remove(SECRET_KEY)
     return this.getSettings()
   }
 
@@ -1276,9 +1434,13 @@ export class MobileEngine {
   // ---------- 连接测试 / 模型列表（真实 HTTP，用注入的 HttpAdapter）----------
 
   async testConnection(input: { profileId?: string; apiKey?: string; baseUrl?: string }): Promise<TestResult> {
-    const config = await this.readConfig()
-    const apiKey = String(input.apiKey || (await this.deps.secret.get(SECRET_KEY)) || '').trim()
-    const baseUrl = String(input.baseUrl || config.baseUrl || '').trim()
+    const stored = await this.readStoredSettings()
+    const selected =
+      stored.profiles.find((profile) => profile.id === input.profileId) ||
+      stored.profiles.find((profile) => profile.id === stored.activeProfileId) ||
+      stored.profiles[0]
+    const apiKey = String(input.apiKey || (await this.getProfileApiKey(selected.id)) || '').trim()
+    const baseUrl = String(input.baseUrl || selected.baseUrl || '').trim()
     const endpoint = buildOpenAiUrl(baseUrl, '/models')
     if (!apiKey) return { ok: false, endpoint, error: 'API key is missing.' }
     try {
@@ -1294,9 +1456,13 @@ export class MobileEngine {
   }
 
   async listImageModels(input: { profileId?: string; apiKey?: string; baseUrl?: string }): Promise<AuxiliaryModelsResult> {
-    const config = await this.readConfig()
-    const apiKey = String(input.apiKey || (await this.deps.secret.get(SECRET_KEY)) || '').trim()
-    const baseUrl = String(input.baseUrl || config.baseUrl || '').trim()
+    const stored = await this.readStoredSettings()
+    const selected =
+      stored.profiles.find((profile) => profile.id === input.profileId) ||
+      stored.profiles.find((profile) => profile.id === stored.activeProfileId) ||
+      stored.profiles[0]
+    const apiKey = String(input.apiKey || (await this.getProfileApiKey(selected.id)) || '').trim()
+    const baseUrl = String(input.baseUrl || selected.baseUrl || '').trim()
     const endpoint = buildOpenAiUrl(baseUrl, '/models')
     if (!apiKey) return { ok: false, endpoint, models: [], error: 'API key is missing.' }
     try {
@@ -1322,11 +1488,12 @@ export class MobileEngine {
   // ---------- 辅助 API：优化提示词 / 样图分析 / 连接测试 / 模型列表 ----------
 
   // 解析辅助 API 配置（无 input 变体，对齐 server.js getAuxiliaryApiConfig）。
-  // useActiveProfile=true → 借用生图配置的 baseUrl + SECRET_KEY；否则用辅助自己的 baseUrl + AUX_SECRET_KEY。
+  // useActiveProfile=true → 借用当前生图配置；否则用当前辅助配置自己的地址与独立密钥。
   private async readAuxConfig(): Promise<{ name: string; apiKey: string; baseUrl: string; model: string }> {
-    const config = await this.readConfig()
-    const aux = (await this.readStoredSettings()).auxiliary
-    const genKey = String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    const { stored, profile: config, apiKey: genKey } = await this.getActiveProfileContext()
+    const aux =
+      stored.auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      stored.auxiliaryProfiles[0]
     if (aux.useActiveProfile) {
       return {
         name: '辅助 API（复用生图配置）',
@@ -1335,7 +1502,7 @@ export class MobileEngine {
         model: aux.model || DEFAULT_AUX_MODEL,
       }
     }
-    const auxKey = String((await this.deps.secret.get(AUX_SECRET_KEY)) || '').trim()
+    const auxKey = await this.getAuxiliaryApiKey(aux.id)
     return {
       name: '辅助 API',
       apiKey: auxKey,
@@ -1347,14 +1514,17 @@ export class MobileEngine {
   // 解析辅助 API 配置（带 input 覆盖，对齐 server.js getAuxiliaryApiConfigFromInput）。
   // 用于连接测试 / 模型列表：input 可临时覆盖 useActiveProfile / apiKey / baseUrl / model。
   private async readAuxConfigFromInput(input: {
+    profileId?: string
     useActiveProfile?: boolean
     apiKey?: string
     baseUrl?: string
     model?: string
   }): Promise<{ name: string; apiKey: string; baseUrl: string; model: string }> {
-    const config = await this.readConfig()
-    const existing = (await this.readStoredSettings()).auxiliary
-    const genKey = String((await this.deps.secret.get(SECRET_KEY)) || '').trim()
+    const { stored, profile: config, apiKey: genKey } = await this.getActiveProfileContext()
+    const existing =
+      stored.auxiliaryProfiles.find((profile) => profile.id === input.profileId) ||
+      stored.auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      stored.auxiliaryProfiles[0]
     const useActiveProfile = Object.prototype.hasOwnProperty.call(input, 'useActiveProfile')
       ? input.useActiveProfile !== false
       : existing.useActiveProfile
@@ -1363,7 +1533,7 @@ export class MobileEngine {
     if (useActiveProfile) {
       return { name: '辅助 API（复用生图配置）', apiKey: genKey, baseUrl: config.baseUrl, model }
     }
-    const auxKey = String((await this.deps.secret.get(AUX_SECRET_KEY)) || '').trim()
+    const auxKey = await this.getAuxiliaryApiKey(existing.id)
     return {
       name: '辅助 API',
       apiKey: String(input.apiKey || auxKey || '').trim(),
@@ -1519,6 +1689,7 @@ export class MobileEngine {
 
   // 辅助 API 连接测试：对齐 server.js testAuxiliaryConnection（发一条 "Reply with exactly: ok"）。
   async testAuxiliary(input: {
+    profileId?: string
     useActiveProfile?: boolean
     apiKey?: string
     baseUrl?: string
@@ -1550,6 +1721,7 @@ export class MobileEngine {
 
   // 辅助 API 模型列表：对齐 server.js listAuxiliaryModels（GET /models → extractModelIds）。
   async listAuxiliaryModels(input: {
+    profileId?: string
     useActiveProfile?: boolean
     apiKey?: string
     baseUrl?: string
@@ -1582,32 +1754,55 @@ export class MobileEngine {
     }
   }
 
-  // 保存辅助 API 配置：对齐 server.js saveAuxiliarySettings 的字段落盘 + 密钥单独存 AUX_SECRET_KEY。
+  // 保存辅助 API 配置。每个 profile 的独立 key 使用各自的安全存储槽。
   async saveAuxiliary(body: AuxiliaryInput): Promise<AppSettings> {
     const stored = await this.readStoredSettings()
-    stored.auxiliary = {
-      name: String(body.name || '辅助 API').trim().slice(0, 80) || '辅助 API',
-      useActiveProfile: body.useActiveProfile !== false,
-      baseUrl: stripTrailingSlash(body.baseUrl),
-      model: String(body.model || '').trim().slice(0, 120),
+    const profileId = normalizeProfileId(body.profileId, `aux-${Date.now()}`)
+    const existingIndex = stored.auxiliaryProfiles.findIndex((profile) => profile.id === profileId)
+    const existing = existingIndex >= 0 ? stored.auxiliaryProfiles[existingIndex] : undefined
+    const nextProfile: StoredAuxProfile = {
+      id: profileId,
+      name: String(body.name || existing?.name || '辅助 API').trim().slice(0, 80) || '辅助 API',
+      useActiveProfile: Object.prototype.hasOwnProperty.call(body, 'useActiveProfile')
+        ? body.useActiveProfile !== false
+        : existing?.useActiveProfile !== false,
+      baseUrl: stripTrailingSlash(body.baseUrl || existing?.baseUrl),
+      model: String(body.model || existing?.model || DEFAULT_AUX_MODEL).trim().slice(0, 120),
     }
-    await this.writeStoredSettings(stored)
+    if (existingIndex >= 0) stored.auxiliaryProfiles[existingIndex] = nextProfile
+    else stored.auxiliaryProfiles.push(nextProfile)
+    if (body.setActive !== false) stored.activeAuxiliaryProfileId = nextProfile.id
+    stored.auxiliary =
+      stored.auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      stored.auxiliaryProfiles[0]
+
     // 密钥：显式 clear 则删；传了非空 apiKey 才写（对齐「留空表示不改」）。
     if (body.clearApiKey) {
-      await this.deps.secret.remove(AUX_SECRET_KEY)
+      await this.deps.secret.remove(this.auxiliarySecretKey(nextProfile.id))
+      if (nextProfile.id === 'aux-mobile') await this.deps.secret.remove(AUX_SECRET_KEY)
     } else if (typeof body.apiKey === 'string' && body.apiKey.trim()) {
-      await this.deps.secret.set(AUX_SECRET_KEY, body.apiKey.trim())
+      await this.deps.secret.set(this.auxiliarySecretKey(nextProfile.id), body.apiKey.trim())
     }
+    await this.writeStoredSettings(stored)
     return this.getSettings()
   }
 
-  // 删除辅助 API 配置：手机版只有单一辅助配置，重置为默认（复用生图配置）并清掉独立密钥。
-  async deleteAuxiliary(_id: string): Promise<AppSettings> {
-    void _id
+  async deleteAuxiliary(profileId: string): Promise<AppSettings> {
     const stored = await this.readStoredSettings()
-    stored.auxiliary = createDefaultAux()
+    const id = normalizeProfileId(profileId, '')
+    const existingIndex = stored.auxiliaryProfiles.findIndex((profile) => profile.id === id)
+    if (existingIndex < 0) throw new Error('辅助 API 配置不存在。')
+    if (stored.auxiliaryProfiles.length <= 1) throw new Error('至少需要保留一个辅助 API 配置。')
+    stored.auxiliaryProfiles.splice(existingIndex, 1)
+    if (stored.activeAuxiliaryProfileId === id) {
+      stored.activeAuxiliaryProfileId = stored.auxiliaryProfiles[0].id
+    }
+    stored.auxiliary =
+      stored.auxiliaryProfiles.find((profile) => profile.id === stored.activeAuxiliaryProfileId) ||
+      stored.auxiliaryProfiles[0]
     await this.writeStoredSettings(stored)
-    await this.deps.secret.remove(AUX_SECRET_KEY)
+    await this.deps.secret.remove(this.auxiliarySecretKey(id))
+    if (id === 'aux-mobile') await this.deps.secret.remove(AUX_SECRET_KEY)
     return this.getSettings()
   }
 }
