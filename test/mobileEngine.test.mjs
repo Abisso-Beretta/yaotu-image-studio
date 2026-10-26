@@ -190,6 +190,33 @@ test('images 模式无参考图：payload 字段正确，负向词按 Avoid 拼�
   assert.ok(call.body.prompt.includes('Avoid: blurry, watermark'))
 })
 
+test('选区局部修改：走 Images Edits 并同时上传标准化原图与 PNG 遮罩', async () => {
+  const { engine, http, file } = await makeEngine({ endpointMode: 'responses' })
+  const maskDataUrl = `data:image/png;base64,${Buffer.from('transparent-mask').toString('base64')}`
+  const result = await engine.generate({
+    ...baseParams,
+    prompt: '把圈选区域改成一朵红色玫瑰',
+    referenceImages: [{ name: 'original.png', dataUrl: REF_DATA_URL, source: 'inpaint' }],
+    maskDataUrl,
+  })
+
+  assert.equal(result.images.length, 1)
+  assert.equal(http.calls.length, 1)
+  const call = http.calls[0]
+  assert.equal(call.kind, 'postMultipart', '即使 API 配置为 Responses，遮罩编辑也应走 images/edits')
+  assert.match(call.url, /\/v1\/images\/edits$/)
+  assert.equal(call.files.length, 2)
+  assert.equal(call.files[0].fieldName, 'image[]')
+  assert.equal(call.files[0].mimeType, 'image/png')
+  assert.equal(call.files[1].fieldName, 'mask')
+  assert.equal(call.files[1].mimeType, 'image/png')
+  assert.equal(call.files[1].base64, Buffer.from('transparent-mask').toString('base64'))
+  const metadata = findMetadata(file).meta
+  assert.equal(metadata.request.maskApplied, true)
+  assert.equal(result.images[0].request.maskApplied, true)
+  assert.equal(Object.hasOwn(metadata.request, 'maskDataUrl'), false, '完整遮罩不应复制进元数据')
+})
+
 test('images 模式：负向词已完整包含在 prompt 里时不重复拼接', async () => {
   const { engine, http } = await makeEngine({ endpointMode: 'images' })
   const prompt = 'a quiet street, please avoid blurry, watermark artifacts'

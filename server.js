@@ -47,7 +47,7 @@ const ENV_OPENAI_IMAGE_ENDPOINT_MODE = ENDPOINT_MODE_VALUES.includes(String(proc
   ? String(process.env.OPENAI_IMAGE_ENDPOINT_MODE).toLowerCase()
   : "images";
 const OPENAI_IMAGE_TIMEOUT_MS = clampInteger(process.env.OPENAI_IMAGE_TIMEOUT_MS, 60000, 1200000, 600000);
-const MAX_JSON_BODY_BYTES = clampInteger(process.env.MAX_JSON_BODY_BYTES, 1024 * 1024, 100 * 1024 * 1024, 50 * 1024 * 1024);
+const MAX_JSON_BODY_BYTES = clampInteger(process.env.MAX_JSON_BODY_BYTES, 1024 * 1024, 100 * 1024 * 1024, 100 * 1024 * 1024);
 const errorLogPath = path.join(dataDir, "server.err.log");
 let updateController = null;
 
@@ -1997,6 +1997,13 @@ async function generateImages(input) {
   fs.mkdirSync(batchDir, { recursive: true });
 
   const referenceImages = await prepareReferenceImages(input.referenceImages, batchId, batchDir);
+  const maskDataUrl = normalizeEditMask(input.maskDataUrl);
+  if (maskDataUrl && referenceImages.length !== 1) {
+    throw httpError(400, "局部修改需要且只能有一张原图。");
+  }
+  if (maskDataUrl && referenceImages[0].mimeType !== "image/png") {
+    throw httpError(400, "局部修改的原图和遮罩必须都是 PNG。");
+  }
   const requestDetails = {
     endpointMode: apiConfig.endpointMode,
     model,
@@ -2009,6 +2016,7 @@ async function generateImages(input) {
     background,
     referenceImages: sanitizeReferenceImages(referenceImages),
   };
+  if (maskDataUrl) requestDetails.maskApplied = true;
   if (manjuContext) {
     requestDetails.manjuContext = manjuContext;
   }
@@ -2017,7 +2025,7 @@ async function generateImages(input) {
     requestDetails.output_compression = compression;
   }
 
-  if (apiConfig.endpointMode === "chat") {
+  if (!maskDataUrl && apiConfig.endpointMode === "chat") {
     return generateImagesViaChat({
       apiConfig,
       prompt,
@@ -2034,7 +2042,7 @@ async function generateImages(input) {
     });
   }
 
-  if (apiConfig.endpointMode === "responses") {
+  if (!maskDataUrl && apiConfig.endpointMode === "responses") {
     return generateImagesViaResponses({
       apiConfig,
       prompt,
@@ -2055,6 +2063,7 @@ async function generateImages(input) {
     apiConfig,
     requestDetails,
     referenceImages,
+    maskDataUrl,
     batchId,
     batchDir,
     size,
@@ -2087,6 +2096,7 @@ async function generateImagesViaImagesApi(options) {
     apiConfig,
     requestDetails,
     referenceImages,
+    maskDataUrl,
     batchId,
     batchDir,
     size,
@@ -2104,7 +2114,7 @@ async function generateImagesViaImagesApi(options) {
       n: upstreamCount,
     };
     const responseBody = referenceImages.length > 0
-      ? await requestImageEdit(apiConfig, upstreamRequestDetails, referenceImages)
+      ? await requestImageEdit(apiConfig, upstreamRequestDetails, referenceImages, maskDataUrl)
       : await requestImageGeneration(apiConfig, upstreamRequestDetails);
 
     const saved = await saveOpenAiResponseImages({
@@ -2209,7 +2219,7 @@ async function requestImageGeneration(apiConfig, requestDetails) {
   return parseOpenAiJsonResponse(apiResponse);
 }
 
-async function requestImageEdit(apiConfig, requestDetails, referenceImages) {
+async function requestImageEdit(apiConfig, requestDetails, referenceImages, maskDataUrl) {
   const form = new FormData();
   const payload = buildImageApiPayload(requestDetails);
 
@@ -2225,6 +2235,12 @@ async function requestImageEdit(apiConfig, requestDetails, referenceImages) {
     form.append("image[]", blob, path.basename(image.filePath));
   });
 
+  if (maskDataUrl) {
+    const parsedMask = parseDataUrl(maskDataUrl);
+    const bytes = Buffer.from(parsedMask.base64, "base64");
+    form.append("mask", new Blob([bytes], { type: "image/png" }), "mask.png");
+  }
+
   const apiResponse = await fetch(buildOpenAiUrl(apiConfig.baseUrl, "/images/edits"), {
     method: "POST",
     headers: {
@@ -2235,6 +2251,19 @@ async function requestImageEdit(apiConfig, requestDetails, referenceImages) {
   });
 
   return parseOpenAiJsonResponse(apiResponse);
+}
+
+function normalizeEditMask(value) {
+  if (value === undefined || value === null || value === "") return null;
+  if (typeof value !== "string") throw httpError(400, "局部修改遮罩格式无效。");
+  const parsed = parseDataUrl(value);
+  if (!parsed || parsed.mimeType !== "image/png") {
+    throw httpError(400, "局部修改遮罩必须是 PNG 图片。");
+  }
+  if (Buffer.byteLength(parsed.base64, "base64") > 50 * 1024 * 1024) {
+    throw httpError(400, "局部修改遮罩不能超过 50 MB。");
+  }
+  return value;
 }
 
 async function parseOpenAiJsonResponse(apiResponse) {
@@ -2472,6 +2501,7 @@ function makePublicRequest(requestDetails = {}) {
     background: requestDetails.background || "auto",
     referenceImages: Array.isArray(requestDetails.referenceImages) ? requestDetails.referenceImages : [],
   };
+  if (requestDetails.maskApplied) request.maskApplied = true;
   if (manjuContext) {
     request.manjuContext = manjuContext;
   }

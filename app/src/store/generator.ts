@@ -170,7 +170,7 @@ interface GeneratorState {
   testResult: TestResult | null
 
   loadConfig: () => Promise<void>
-  generate: () => Promise<void>
+  generate: (override?: { prompt?: string; referenceImages?: ReferenceImageInput[]; maskDataUrl?: string }) => Promise<void>
   cancelGenerate: () => void
   optimize: (mode: string) => Promise<void>
   reroll: (img: GeneratedImage) => Promise<void>
@@ -325,9 +325,9 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
     }
   },
 
-  generate: async () => {
+  generate: async (override) => {
     const { form, refs, savedStyles } = get()
-    if (!form.prompt.trim()) {
+    if (!(override?.prompt ?? form.prompt).trim()) {
       set({ error: '先写一句画面提示词。' })
       return
     }
@@ -336,7 +336,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
     generateController = controller
     const styleRefs = savedStyleReferences(form.style, savedStyles)
     const body: GenerateParams = {
-      prompt: composePrompt(form, savedStyles),
+      prompt: override?.prompt ?? composePrompt(form, savedStyles),
       negativePrompt: form.negativePrompt.trim() || undefined,
       model: form.model.trim() || undefined,
       size: form.size,
@@ -345,7 +345,7 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
       outputFormat: form.outputFormat,
       background: form.background,
       outputCompression: form.outputCompression,
-      referenceImages: [
+      referenceImages: override?.referenceImages ?? [
         ...refs.map((r) => ({
           name: r.name,
           dataUrl: r.dataUrl,
@@ -354,12 +354,15 @@ export const useGenerator = create<GeneratorState>((set, get) => ({
         })),
         ...styleRefs,
       ],
+      maskDataUrl: override?.maskDataUrl,
     }
     try {
       const result = await api.generate(body, controller.signal)
       set({
         lastBatch: result.images,
-        notice: `已生成 ${result.images.length} 张，批次 ${result.batchId}。`,
+        notice: override?.maskDataUrl
+          ? `局部修改完成，共 ${result.images.length} 张。`
+          : `已生成 ${result.images.length} 张，批次 ${result.batchId}。`,
       })
       await get().loadGallery(1)
       // 记一笔「最近用过」（失败不影响出图）。

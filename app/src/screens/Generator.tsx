@@ -3,6 +3,7 @@ import { useGenerator, composePrompt } from '@/store/generator'
 import { builtInStylePresets, promptLexiconGroups, purposePresets } from '@/data/presets'
 import { capabilities } from '@/platform'
 import Lightbox from '@/components/Lightbox'
+import SelectionEditor from '@/components/SelectionEditor'
 import { openPrompt } from '@/components/PromptDialog'
 import type { GeneratedImage } from '@/types'
 
@@ -17,7 +18,7 @@ const SIZES = [
   { v: 'auto', label: '自动' },
 ]
 
-const MODELS = ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']
+const MODELS = ['gpt-image-2', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini']
 
 function Label({ children }: { children: React.ReactNode }) {
   return <span className="block text-xs text-neutral-400 mb-1">{children}</span>
@@ -111,6 +112,7 @@ export default function Generator() {
   const [showPreview, setShowPreview] = useState(false)
   const [styleStrength, setStyleStrength] = useState('medium')
   const [lightbox, setLightbox] = useState<{ images: GeneratedImage[]; index: number } | null>(null)
+  const [selection, setSelection] = useState<{ source: string; name: string } | null>(null)
 
   const canGenerate = !generating && form.prompt.trim().length > 0
   const showCompression = form.outputFormat === 'jpeg' || form.outputFormat === 'webp'
@@ -591,6 +593,12 @@ export default function Generator() {
                   >
                     ×
                   </button>
+                  <button
+                    className="absolute inset-x-1 bottom-1 rounded bg-black/75 text-[11px] py-1 text-white"
+                    onClick={() => setSelection({ source: r.dataUrl || r.url || '', name: r.name })}
+                  >
+                    局部修改
+                  </button>
                 </div>
               ))}
             </div>
@@ -616,7 +624,7 @@ export default function Generator() {
         ) : (
           <button
             disabled={!canGenerate}
-            onClick={generate}
+            onClick={() => void generate()}
             className="w-full py-3 rounded-lg font-bold text-white bg-accent enabled:hover:bg-accent-soft disabled:opacity-40 disabled:cursor-not-allowed"
           >
             生成图片
@@ -698,6 +706,22 @@ export default function Generator() {
           index={lightbox.index}
           onIndexChange={(index) => setLightbox({ ...lightbox, index })}
           onClose={() => setLightbox(null)}
+        />
+      )}
+      {selection && (
+        <SelectionEditor
+          source={selection.source}
+          title={`局部修改：${selection.name}`}
+          busy={generating}
+          onCancel={() => setSelection(null)}
+          onSubmit={(edit) => {
+            setSelection(null)
+            void generate({
+              prompt: edit.prompt,
+              referenceImages: [{ name: `${selection.name}.png`, dataUrl: edit.imageDataUrl, source: 'inpaint' }],
+              maskDataUrl: edit.maskDataUrl,
+            })
+          }}
         />
       )}
     </div>

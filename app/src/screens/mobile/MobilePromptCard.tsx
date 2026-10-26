@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useGenerator } from '@/store/generator'
+import SelectionEditor from '@/components/SelectionEditor'
 import { builtInStylePresets, purposePresets } from '@/data/presets'
 import { takePhoto, pickFromGallery, isCameraCancel } from './cameraInput'
 import { isAuxConfigured } from './auxStatus'
@@ -97,6 +98,7 @@ export default function MobilePromptCard() {
   const addRefFiles = useGenerator((s) => s.addRefFiles)
   const removeRef = useGenerator((s) => s.removeRef)
   const clearRefs = useGenerator((s) => s.clearRefs)
+  const generate = useGenerator((s) => s.generate)
 
   // 优化提示词：走 store.optimize，与生成互斥禁用。
   const optimize = useGenerator((s) => s.optimize)
@@ -125,6 +127,7 @@ export default function MobilePromptCard() {
   const [showSaveStyle, setShowSaveStyle] = useState(false)
   const [styleName, setStyleName] = useState('')
   const [styleStrength, setStyleStrength] = useState('medium')
+  const [selection, setSelection] = useState<{ source: string; name: string } | null>(null)
 
   // 输出格式为 jpeg/webp 时才显示压缩，与桌面口径一致。
   const showCompression = form.outputFormat === 'jpeg' || form.outputFormat === 'webp'
@@ -191,9 +194,11 @@ export default function MobilePromptCard() {
   function Thumbs({
     items,
     onRemove,
+    onEdit,
   }: {
     items: { id: string; name: string; dataUrl?: string; url?: string }[]
     onRemove: (id: string) => void
+    onEdit?: (item: { name: string; dataUrl?: string; url?: string }) => void
   }) {
     if (items.length === 0) return null
     return (
@@ -205,6 +210,14 @@ export default function MobilePromptCard() {
               alt={r.name}
               className="w-20 h-20 object-cover rounded-xl border border-line"
             />
+            {onEdit && (
+              <button
+                onClick={() => onEdit(r)}
+                className="absolute inset-x-1 bottom-1 min-h-9 rounded-lg bg-black/75 text-[11px] text-white"
+              >
+                局部修改
+              </button>
+            )}
             <button
               onClick={() => onRemove(r.id)}
               aria-label="移除"
@@ -342,7 +355,11 @@ export default function MobilePromptCard() {
         {refs.length >= REF_LIMIT && (
           <p className="text-[11px] text-neutral-500">已达 {REF_LIMIT} 张上限，删掉几张再加。</p>
         )}
-        <Thumbs items={refs} onRemove={removeRef} />
+        <Thumbs
+          items={refs}
+          onRemove={removeRef}
+          onEdit={(item) => setSelection({ source: item.dataUrl || item.url || '', name: item.name })}
+        />
       </div>
 
       {/* 样图分析：折叠区。未配置辅助 API 时整段替换为引导条。 */}
@@ -557,6 +574,22 @@ export default function MobilePromptCard() {
           />
         </Field>
       </Collapsible>
+      {selection && (
+        <SelectionEditor
+          source={selection.source}
+          title={`局部修改：${selection.name}`}
+          busy={generating}
+          onCancel={() => setSelection(null)}
+          onSubmit={(edit) => {
+            setSelection(null)
+            void generate({
+              prompt: edit.prompt,
+              referenceImages: [{ name: `${selection.name}.png`, dataUrl: edit.imageDataUrl, source: 'inpaint' }],
+              maskDataUrl: edit.maskDataUrl,
+            })
+          }}
+        />
+      )}
     </div>
   )
 }

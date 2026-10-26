@@ -141,6 +141,15 @@ function parseDataUrl(value: unknown): { mimeType: string; base64: string } | nu
   return { mimeType: match[1].toLowerCase(), base64: match[2] }
 }
 
+function normalizeEditMask(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new Error('局部修改遮罩格式无效。')
+  const parsed = parseDataUrl(value)
+  if (!parsed || parsed.mimeType !== 'image/png') throw new Error('局部修改遮罩必须是 PNG 图片。')
+  if (base64ByteLength(parsed.base64) > 50 * 1024 * 1024) throw new Error('局部修改遮罩不能超过 50 MB。')
+  return value
+}
+
 function extname(path: string): string {
   const base = path.slice(path.lastIndexOf('/') + 1)
   const dot = base.lastIndexOf('.')
@@ -405,6 +414,7 @@ function makePublicRequest(details: ImageRequest): ImageRequest {
     background: details.background || 'auto',
     referenceImages: Array.isArray(details.referenceImages) ? details.referenceImages : [],
   }
+  if (details.maskApplied) request.maskApplied = true
   if (manjuContext) request.manjuContext = manjuContext
   return request
 }
@@ -719,6 +729,13 @@ export class MobileEngine {
     await this.deps.file.mkdir(`${OUTPUTS_ROOT}/${batchId}`)
 
     const references = await this.prepareReferenceImages(body.referenceImages, batchId)
+    const maskDataUrl = normalizeEditMask(body.maskDataUrl)
+    if (maskDataUrl && references.length !== 1) {
+      throw new Error('局部修改需要且只能有一张原图。')
+    }
+    if (maskDataUrl && references[0].mimeType !== 'image/png') {
+      throw new Error('局部修改的原图和遮罩必须都是 PNG。')
+    }
 
     const requestDetails: ImageRequest = {
       endpointMode,
@@ -732,6 +749,7 @@ export class MobileEngine {
       background,
       referenceImages: sanitizeReferenceImages(references),
     }
+    if (maskDataUrl) requestDetails.maskApplied = true
     if (manjuContext) requestDetails.manjuContext = manjuContext
     // output_compression 仅当输出为 jpeg/webp 时才进请求体（对齐 server.js）
     if (outputFormat === 'jpeg' || outputFormat === 'webp') {
@@ -741,12 +759,12 @@ export class MobileEngine {
     const createdAt = startedAt.toISOString()
     let images: GeneratedImage[]
     let lastResponseBody: unknown = null
-    if (endpointMode === 'responses') {
+    if (!maskDataUrl && endpointMode === 'responses') {
       ;({ images, lastResponseBody } = await this.runResponses({ apiKey, baseUrl, requestDetails, references, batchId, createdAt, count, signal }))
-    } else if (endpointMode === 'chat') {
+    } else if (!maskDataUrl && endpointMode === 'chat') {
       ;({ images, lastResponseBody } = await this.runChat({ apiKey, baseUrl, requestDetails, references, batchId, createdAt, count, signal }))
     } else {
-      ;({ images, lastResponseBody } = await this.runImages({ apiKey, baseUrl, requestDetails, references, batchId, createdAt, count, signal }))
+      ;({ images, lastResponseBody } = await this.runImages({ apiKey, baseUrl, requestDetails, references, maskDataUrl, batchId, createdAt, count, signal }))
     }
 
     if (images.length === 0) {
@@ -774,12 +792,13 @@ export class MobileEngine {
     baseUrl: string
     requestDetails: ImageRequest
     references: InternalReference[]
+    maskDataUrl: string | null
     batchId: string
     createdAt: string
     count: number
     signal?: AbortSignal
   }): Promise<{ images: GeneratedImage[]; lastResponseBody: unknown }> {
-    const { apiKey, baseUrl, requestDetails, references, batchId, createdAt, count, signal } = ctx
+    const { apiKey, baseUrl, requestDetails, references, maskDataUrl, batchId, createdAt, count, signal } = ctx
     const images: GeneratedImage[] = []
     const attempts = count > 1 ? count : 1
     const upstreamCount = count > 1 ? 1 : count
@@ -800,6 +819,10 @@ export class MobileEngine {
           mimeType: r.mimeType || 'image/png',
           base64: r.base64,
         }))
+        if (maskDataUrl) {
+          const parsedMask = parseDataUrl(maskDataUrl)
+          if (parsedMask) files.push({ fieldName: 'mask', fileName: 'mask.png', mimeType: 'image/png', base64: parsedMask.base64 })
+        }
         resp = await this.deps.http.postMultipart(buildOpenAiUrl(baseUrl, '/images/edits'), fields, files, this.authHeaders(apiKey), signal)
       } else {
         resp = await this.deps.http.postJson(buildOpenAiUrl(baseUrl, '/images/generations'), payload, this.authHeaders(apiKey), signal)

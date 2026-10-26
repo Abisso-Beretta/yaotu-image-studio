@@ -58,6 +58,7 @@ export interface GenerateParams {
   background: string
   outputCompression?: number
   referenceImages?: ReferenceImageInput[]
+  maskDataUrl?: string
   manjuContext?: ManjuContext
 }
 
@@ -73,6 +74,7 @@ export interface ImageRequest {
   output_compression?: number
   background?: string
   referenceImages?: ReferenceImageInput[]
+  maskApplied?: boolean
   manjuContext?: ManjuContext
 }
 

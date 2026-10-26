@@ -33,7 +33,7 @@ export default function MobileGenerateBar() {
       ) : (
         <button
           disabled={!canGenerate}
-          onClick={generate}
+          onClick={() => void generate()}
           className="w-full min-h-[52px] rounded-xl font-bold text-white bg-accent active:bg-accent-soft disabled:opacity-40"
         >
           生成
